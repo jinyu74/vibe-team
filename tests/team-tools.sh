@@ -28,7 +28,10 @@ cat > "$WORK/t.conf" <<'CONF'
 나 | 나 | 나 막힘   | claude | m | high | na
 다 | 다 | 다 정상   | claude | m | high | da
 라 | 페어 | 라 페어 | claude | m | high | ra
-마 | 페어 | 마 페어 | claude | m | high | ma
+마 | 페어 | 마 페어 | codex | m | high | ma
+가-코덱스 | 가 | 가 검증 | codex | m | high | ga-x
+나-코덱스 | 나 | 나 검증 | codex | m | high | na-x
+다-코덱스 | 다 | 다 검증 | codex | m | high | da-x
 CONF
 
 # new_team <세션> — 멤버 0~2 페인에 가짜 CLI 를 띄우고 setup-team.sh 처럼 태그를 붙인다
@@ -76,14 +79,14 @@ check "별칭이 다른 멤버 이름과 겹침 → 설정 로드 실패" 1 $? "
 
 echo "── 팀 설정 지시어"
 dir_conf() { { cat "$WORK/t.conf"; printf '%s\n' "$@"; } > "$WORK/dir.conf"; bash -c ". '$ROOT/lib/members.sh'; load_members '$WORK/dir.conf'" >"$WORK/out" 2>&1; }
-dir_conf '@worktree 다' '@duty 다 첫째' '@duty 다 둘째' '@substitute 보안-코덱스 가 품질'
+dir_conf '@worktree 다' '@duty 다 첫째' '@duty 다 둘째' '@substitute 보안-코덱스 마 연락'
 check "@worktree·@duty·@substitute 정상 로드" 0 $?
 bash -c ". '$ROOT/lib/members.sh'; load_members '$WORK/dir.conf' && [ \"\${M_WORKTREE[2]}\" = 1 ] && [ \"\$(printf '%s' \"\${M_DUTY[2]}\" | wc -l | tr -d ' ')\" = 1 ]" >"$WORK/out" 2>&1
 check "  └ worktree 표시·@duty 두 줄 누적" 0 $?
 dir_conf '@duty 없는사람 책임'
 check "@duty 에 팀에 없는 이름 → 로드 실패" 1 $? "팀 멤버가 아닙니다"
 dir_conf '@substitute 가 다'
-check "@substitute 부재 이름이 실제 멤버 → 로드 실패" 1 $? "이 팀 멤버입니다"
+check "@substitute 부재 이름이 실제 멤버 → 로드 실패" 1 $? "이 팀 멤버 또는 별칭"
 dir_conf '@worktree 없는사람'
 check "@worktree 에 팀에 없는 이름 → 로드 실패" 1 $? "팀 멤버가 아닙니다"
 

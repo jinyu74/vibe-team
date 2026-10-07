@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# team-release-check — 최종 릴리스 검사기. 코드 SHA·게이트 결과·아티팩트·페어 판정·결함·롤백·승인이 하나라도 어긋나면 배포를 막는다 (공통 §7.1).
+# bash 3.2 호환, jq 필요.
+#
+# 사용: team-release-check <매니페스트.json> [--root <프로젝트 루트>] [-- <배포 명령 ...>]
+#   매니페스트 형식: templates/release-manifest.json (경로는 프로젝트 루트 기준)
+#   '--' 뒤 배포 명령은 모든 검사를 통과했을 때만 실행한다 (환경 변수 VIBE_RELEASE_VERSION·VIBE_RELEASE_SHA 제공).
+#   CD 파이프라인의 production 승격은 반드시 이 형태로 호출한다 — 검사와 배포 사이에 다른 단계를 두지 않는다.
+#   기록: <루트>/.vibe/runs/release-check-<버전>-<시각>.md
+# 종료 코드: 0 = 배포 가능(배포 명령이 있으면 그 종료 코드), 1 = 차단, 2 = 사용법·매니페스트 오류
+
+set -uo pipefail
+MANIFEST="" ROOT="" DEPLOY=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --root) [ $# -ge 2 ] && [ -n "$2" ] || { echo "--root: 값이 필요합니다" >&2; exit 2; }; ROOT="$2"; shift 2 ;;
+        --) shift; DEPLOY=("$@"); break ;;
+        -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*) echo "알 수 없는 옵션: $1" >&2; exit 2 ;;
+        *) [ -z "$MANIFEST" ] || { echo "매니페스트는 하나만" >&2; exit 2; }; MANIFEST="$1"; shift ;;
+    esac
+done
+[ -n "$MANIFEST" ] || { echo "사용: team-release-check <매니페스트.json> [--root <루트>] [-- <배포 명령>]" >&2; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "jq 가 필요합니다" >&2; exit 2; }
+[ -f "$MANIFEST" ] || { echo "매니페스트 없음: $MANIFEST" >&2; exit 2; }
+jq -e 'type == "object"' "$MANIFEST" >/dev/null 2>&1 || { echo "매니페스트가 JSON 객체가 아닙니다: $MANIFEST" >&2; exit 2; }
+if [ -z "$ROOT" ]; then ROOT="$(git -C "$(dirname "$MANIFEST")" rev-parse --show-toplevel 2>/dev/null)" || { echo "프로젝트 루트를 찾을 수 없습니다 — --root 지정" >&2; exit 2; }; fi
+ROOT="$(cd "$ROOT" && pwd)" || exit 2
+
+sha256_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{ print $1 }'; }
+j() { jq -r "$1 // empty" "$MANIFEST"; }
+abspath() { case "$1" in /*) echo "$1" ;; *) echo "$ROOT/$1" ;; esac; }
+OK=0 BAD=0 REPORT=""
+pass() { OK=$((OK + 1)); REPORT="$REPORT
+- ✅ $1"; echo "  ✅ $1"; }
+block() { BAD=$((BAD + 1)); REPORT="$REPORT
+- ❌ $1"; echo "  ❌ $1"; }
+check() { if eval "$2"; then pass "$1"; else block "$1${3:+ — $3}"; fi; }
+
+VERSION="$(j .version)"
+SRC="$(j .source_sha)"
+echo "▶ 릴리스 ${VERSION:-?} · ${SRC:-?}"
+
+echo "▶ 소스"
+check "version 지정" '[ -n "$VERSION" ]'
+check "source_sha 는 전체 40자리 커밋" 'printf "%s" "$SRC" | grep -Eq "^[0-9a-f]{40}$"' "$SRC"
+HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo -)"
+check "작업 트리 HEAD = source_sha" '[ "$HEAD_SHA" = "$SRC" ]' "HEAD $HEAD_SHA"
+TRACKED_DIRTY="$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)"
+check "추적 파일 미커밋 변경 없음" '[ -z "$TRACKED_DIRTY" ]' "$(printf '%s' "$TRACKED_DIRTY" | head -3 | tr '\n' ' ')"
+
+echo "▶ 게이트 (scope=release FULL_PASS)"
+GATE_RUN="$(j .gate_run)"; RES="$(abspath "${GATE_RUN:-/nonexistent}")/result.txt"
+rv() { sed -n "s/^$1=//p" "$RES" 2>/dev/null | head -1; }
+if [ -f "$RES" ]; then
+    pass "게이트 결과 존재 ($GATE_RUN)"
+    check "판정 FULL_PASS" '[ "$(rv verdict)" = FULL_PASS ]' "$(rv verdict)"
+    check "범위 release" '[ "$(rv scope)" = release ]' "$(rv scope)"
+    check "게이트 실행 커밋 = source_sha" '[ "$(rv sha)" = "$SRC" ]' "$(rv sha)"
+    check "게이트 실행 시 미커밋 변경 없음" '[ "$(rv dirty)" = 0 ]'
+    GCONF="$(rv config)"
+    check "게이트 정책 파일이 실행 당시와 같음 (sha256)" '[ -f "$GCONF" ] && [ "$(sha256_of "$GCONF")" = "$(rv policy_sha256)" ]' "$GCONF"
+    check "시간 초과·중단 게이트 없음" '[ -z "$(rv timeouts)" ] && [ -z "$(rv not_run)" ]'
+else
+    block "게이트 결과 없음: $RES"
+fi
+
+echo "▶ 아티팩트 (CI 산출물 = staging 검증 = 승격 대상)"
+N_ART="$(jq '.artifacts | if type == "array" then length else 0 end' "$MANIFEST")"
+check "아티팩트 1개 이상" '[ "$N_ART" -ge 1 ]'
+ART_SHAS=""
+a=0
+while [ "$a" -lt "$N_ART" ]; do
+    name="$(j ".artifacts[$a].name")"; path="$(j ".artifacts[$a].path")"; want="$(j ".artifacts[$a].sha256")"; stg="$(j ".artifacts[$a].staging_sha256")"
+    f="$(abspath "${path:-/nonexistent}")"
+    if [ -f "$f" ]; then
+        got="$(sha256_of "$f")"
+        check "[$name] 파일 digest = 매니페스트" '[ -n "$want" ] && [ "$got" = "$want" ]' "실제 $got"
+    else
+        block "[$name] 파일 없음: ${path:-?}"
+    fi
+    check "[$name] staging 검증 digest = 매니페스트" '[ -n "$stg" ] && [ "$stg" = "$want" ]' "staging ${stg:-없음}"
+    check "[$name] CI 실행 기록" '[ -n "$(j ".artifacts[$a].ci_run")" ]'
+    ART_SHAS="$ART_SHAS $want"
+    a=$((a + 1))
+done
+
+echo "▶ 페어 판정 (Claude 제시 · Codex 독립 재확인 · 합의 서명)"
+REQ="테스트설계 품질 성능 보안 $(jq -r '(.required_parts // [])[]' "$MANIFEST" | tr '\n' ' ')"
+seen=""
+for part in $REQ; do
+    case " $seen " in *" $part "*) continue ;; esac; seen="$seen $part"
+    idx="$(jq -r --arg p "$part" '[.verdicts // [] | to_entries[] | select(.value.part == $p) | .key] | first // empty' "$MANIFEST")"
+    if [ -z "$idx" ]; then block "[$part] 판정 없음"; continue; fi
+    v=".verdicts[$idx]"
+    cl="$(j "$v.claude")"; cx="$(j "$v.codex")"; rounds="$(j "$v.rounds")"; ev="$(j "$v.codex_evidence")"
+    check "[$part] 결과 통과·상태 합의" '[ "$(j "$v.result")" = 통과 ] && [ "$(j "$v.status")" = 합의 ]' "$(j "$v.result")/$(j "$v.status")"
+    check "[$part] 판정 커밋 = source_sha (오래된 판정 아님)" '[ "$(j "$v.source_sha")" = "$SRC" ]'
+    check "[$part] 서로 다른 Claude·Codex 서명" '[ -n "$cl" ] && [ -n "$cx" ] && [ "$cl" != "$cx" ] && case "$cl" in *-클로드) true ;; *) false ;; esac && case "$cx" in *-코덱스) true ;; *) false ;; esac' "$cl / $cx"
+    check "[$part] 토론 라운드 0~3" 'case "$rounds" in [0-3]) true ;; *) false ;; esac' "$rounds"
+    evf="$(abspath "${ev:-/nonexistent}")"
+    if [ -f "$evf" ]; then
+        missing=""
+        for field in "확인 대상" "실행 명령" "환경" "결과"; do
+            grep -Eq "^- ${field}: *[^ ]" "$evf" || missing="$missing $field"
+        done
+        check "[$part] Codex 독립 검증 근거 필드 (확인 대상·실행 명령·환경·결과)" '[ -z "$missing" ]' "빠짐:$missing"
+        check "[$part] Codex 근거가 같은 커밋을 확인" 'grep -qF "$SRC" "$evf"'
+    else
+        block "[$part] Codex 독립 검증 근거 파일 없음: ${ev:-?}"
+    fi
+done
+
+echo "▶ 결함 (차단·CRITICAL·HIGH·MEDIUM 0건)"
+for sev in blocking critical high medium; do
+    cnt="$(jq -r --arg s "$sev" '.defects[$s] // "missing"' "$MANIFEST")"
+    check "결함 $sev = 0" '[ "$cnt" = 0 ]' "$cnt"
+done
+check "결함 목록 문서 존재" '[ -f "$(abspath "$(j .defects.list)")" ]' "$(j .defects.list)"
+
+echo "▶ 롤백·복구"
+check "롤백 검증 완료" '[ "$(jq -r ".rollback.verified" "$MANIFEST")" = true ]'
+check "롤백 검증 기록 존재" '[ -f "$(abspath "$(j .rollback.evidence)")" ]' "$(j .rollback.evidence)"
+
+echo "▶ 사용자 승인"
+check "승인자 = 사용자" '[ "$(j .approval.by)" = user ]' "$(j .approval.by)"
+check "승인 버전 = 릴리스 버전" '[ "$(j .approval.version)" = "$VERSION" ]'
+check "승인 커밋 = source_sha" '[ "$(j .approval.source_sha)" = "$SRC" ]'
+APPROVED="$(jq -r '(.approval.artifacts_sha256 // [])[]' "$MANIFEST" | sort | tr '\n' ' ')"
+MANI="$(printf '%s\n' $ART_SHAS | sed '/^$/d' | sort | tr '\n' ' ')"
+check "승인한 아티팩트 = 승격할 아티팩트" '[ -n "$MANI" ] && [ "$APPROVED" = "$MANI" ]'
+check "릴리스 계획 문서 존재" '[ -f "$(abspath "$(j .approval.plan)")" ]' "$(j .approval.plan)"
+
+if [ $BAD -eq 0 ]; then verdict="RELEASABLE"; else verdict="BLOCKED"; fi
+mkdir -p "$ROOT/.vibe/runs" && LOG="$ROOT/.vibe/runs/release-check-$(printf '%s' "${VERSION:-unknown}" | tr -c 'A-Za-z0-9._-' '_')-$(date +%Y%m%d-%H%M%S).md"
+{
+    echo "# 릴리스 검사 ${VERSION:-?} — $verdict"
+    echo
+    echo "- 매니페스트: $MANIFEST"
+    echo "- source_sha: $SRC · 검사 시각: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "- 통과 $OK · 차단 $BAD"
+    printf '%s\n' "$REPORT"
+} > "$LOG" 2>/dev/null || LOG="(기록 실패)"
+echo "판정: $verdict (통과 $OK · 차단 $BAD) — 기록 $LOG"
+
+[ $BAD -eq 0 ] || { [ ${#DEPLOY[@]} -gt 0 ] && echo "🚫 배포 명령을 실행하지 않았습니다: ${DEPLOY[*]}" >&2; exit 1; }
+if [ ${#DEPLOY[@]} -gt 0 ]; then
+    echo "▶ 배포 실행: ${DEPLOY[*]}"
+    VIBE_RELEASE_VERSION="$VERSION" VIBE_RELEASE_SHA="$SRC" "${DEPLOY[@]}"
+    exit $?
+fi
+exit 0

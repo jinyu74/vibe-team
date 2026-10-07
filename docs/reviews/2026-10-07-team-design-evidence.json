@@ -1,0 +1,1235 @@
+{
+  "workspace_revision": "d5f4915120c65a19f57c2f6ca456d4b1323c7313",
+  "profiles": [
+    {
+      "profile": "backend-api",
+      "members": 24,
+      "engines": {
+        "claude": 12,
+        "codex": 12
+      },
+      "parts": {
+        "진행": [
+          {
+            "member": "진행-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "진행-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "기획": [
+          {
+            "member": "기획-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "기획-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "비즈니스분석": [
+          {
+            "member": "기획-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "기획-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "통계": [
+          {
+            "member": "통계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "통계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "시스템설계": [
+          {
+            "member": "시스템설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "시스템설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "테스트설계": [
+          {
+            "member": "테스트설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "테스트설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "코어개발": [
+          {
+            "member": "코어개발-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "코어개발-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "개발구현": [
+          {
+            "member": "개발구현-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "개발구현-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "품질": [
+          {
+            "member": "품질-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "품질-클로드",
+            "engine": "claude"
+          }
+        ],
+        "성능": [
+          {
+            "member": "성능-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "성능-클로드",
+            "engine": "claude"
+          }
+        ],
+        "보안": [
+          {
+            "member": "보안-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "보안-클로드",
+            "engine": "claude"
+          }
+        ],
+        "빌드": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CI": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CD": [
+          {
+            "member": "CD-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CD-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "배포": [
+          {
+            "member": "CD-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CD-코덱스",
+            "engine": "codex"
+          }
+        ]
+      },
+      "pair_ok": true,
+      "dry_run_exit": 0,
+      "dry_run_stderr": "setup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\n",
+      "plugin_warnings": []
+    },
+    {
+      "profile": "discovery",
+      "members": 10,
+      "engines": {
+        "claude": 5,
+        "codex": 5
+      },
+      "parts": {
+        "진행": [
+          {
+            "member": "진행-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "진행-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "기획": [
+          {
+            "member": "기획-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "기획-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "비즈니스분석": [
+          {
+            "member": "비즈니스분석-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "비즈니스분석-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "통계": [
+          {
+            "member": "통계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "통계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "시스템설계": [
+          {
+            "member": "시스템설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "시스템설계-코덱스",
+            "engine": "codex"
+          }
+        ]
+      },
+      "pair_ok": true,
+      "dry_run_exit": 0,
+      "dry_run_stderr": "setup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\n",
+      "plugin_warnings": []
+    },
+    {
+      "profile": "full",
+      "members": 38,
+      "engines": {
+        "claude": 19,
+        "codex": 19
+      },
+      "parts": {
+        "진행": [
+          {
+            "member": "진행-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "진행-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "기획": [
+          {
+            "member": "기획-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "기획-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "비즈니스분석": [
+          {
+            "member": "비즈니스분석-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "비즈니스분석-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "통계": [
+          {
+            "member": "통계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "통계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "시스템설계": [
+          {
+            "member": "시스템설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "시스템설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "디자인": [
+          {
+            "member": "디자인-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "디자인-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "테스트설계": [
+          {
+            "member": "테스트설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "테스트설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "코어개발": [
+          {
+            "member": "코어개발-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "코어개발-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "개발구현": [
+          {
+            "member": "개발구현-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "개발구현-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "아트": [
+          {
+            "member": "아트-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "아트-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "배경": [
+          {
+            "member": "배경-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "배경-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "사운드": [
+          {
+            "member": "사운드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "사운드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "품질": [
+          {
+            "member": "품질-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "품질-클로드",
+            "engine": "claude"
+          }
+        ],
+        "성능": [
+          {
+            "member": "성능-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "성능-클로드",
+            "engine": "claude"
+          }
+        ],
+        "보안": [
+          {
+            "member": "보안-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "보안-클로드",
+            "engine": "claude"
+          }
+        ],
+        "빌드": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CI": [
+          {
+            "member": "CI-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CI-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CD": [
+          {
+            "member": "CD-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CD-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "배포": [
+          {
+            "member": "배포-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "배포-코덱스",
+            "engine": "codex"
+          }
+        ]
+      },
+      "pair_ok": true,
+      "dry_run_exit": 0,
+      "dry_run_stderr": "setup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\n",
+      "plugin_warnings": []
+    },
+    {
+      "profile": "game",
+      "members": 32,
+      "engines": {
+        "claude": 16,
+        "codex": 16
+      },
+      "parts": {
+        "진행": [
+          {
+            "member": "진행-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "진행-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "기획": [
+          {
+            "member": "기획-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "기획-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "비즈니스분석": [
+          {
+            "member": "비즈니스분석-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "비즈니스분석-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "통계": [
+          {
+            "member": "비즈니스분석-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "비즈니스분석-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "시스템설계": [
+          {
+            "member": "시스템설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "시스템설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "디자인": [
+          {
+            "member": "디자인-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "디자인-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "테스트설계": [
+          {
+            "member": "테스트설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "테스트설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "코어개발": [
+          {
+            "member": "코어개발-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "코어개발-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "개발구현": [
+          {
+            "member": "개발구현-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "개발구현-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "아트": [
+          {
+            "member": "아트-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "아트-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "배경": [
+          {
+            "member": "배경-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "배경-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "사운드": [
+          {
+            "member": "사운드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "사운드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "품질": [
+          {
+            "member": "품질-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "품질-클로드",
+            "engine": "claude"
+          }
+        ],
+        "성능": [
+          {
+            "member": "성능-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "성능-클로드",
+            "engine": "claude"
+          }
+        ],
+        "보안": [
+          {
+            "member": "보안-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "보안-클로드",
+            "engine": "claude"
+          }
+        ],
+        "빌드": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CI": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CD": [
+          {
+            "member": "CD-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CD-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "배포": [
+          {
+            "member": "CD-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CD-코덱스",
+            "engine": "codex"
+          }
+        ]
+      },
+      "pair_ok": true,
+      "dry_run_exit": 0,
+      "dry_run_stderr": "setup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\n",
+      "plugin_warnings": []
+    },
+    {
+      "profile": "mobile-app",
+      "members": 28,
+      "engines": {
+        "claude": 14,
+        "codex": 14
+      },
+      "parts": {
+        "진행": [
+          {
+            "member": "진행-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "진행-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "기획": [
+          {
+            "member": "기획-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "기획-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "비즈니스분석": [
+          {
+            "member": "비즈니스분석-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "비즈니스분석-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "통계": [
+          {
+            "member": "통계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "통계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "시스템설계": [
+          {
+            "member": "시스템설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "시스템설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "디자인": [
+          {
+            "member": "디자인-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "디자인-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "테스트설계": [
+          {
+            "member": "테스트설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "테스트설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "코어개발": [
+          {
+            "member": "코어개발-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "코어개발-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "개발구현": [
+          {
+            "member": "개발구현-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "개발구현-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "품질": [
+          {
+            "member": "품질-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "품질-클로드",
+            "engine": "claude"
+          }
+        ],
+        "성능": [
+          {
+            "member": "성능-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "성능-클로드",
+            "engine": "claude"
+          }
+        ],
+        "보안": [
+          {
+            "member": "보안-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "보안-클로드",
+            "engine": "claude"
+          }
+        ],
+        "빌드": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CI": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CD": [
+          {
+            "member": "CD-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CD-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "배포": [
+          {
+            "member": "CD-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CD-코덱스",
+            "engine": "codex"
+          }
+        ]
+      },
+      "pair_ok": true,
+      "dry_run_exit": 0,
+      "dry_run_stderr": "setup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\n",
+      "plugin_warnings": []
+    },
+    {
+      "profile": "tool-lib",
+      "members": 16,
+      "engines": {
+        "claude": 8,
+        "codex": 8
+      },
+      "parts": {
+        "진행": [
+          {
+            "member": "진행-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "진행-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "기획": [
+          {
+            "member": "기획-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "기획-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "비즈니스분석": [
+          {
+            "member": "기획-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "기획-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "시스템설계": [
+          {
+            "member": "시스템설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "시스템설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "테스트설계": [
+          {
+            "member": "테스트설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "테스트설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "코어개발": [
+          {
+            "member": "코어개발-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "코어개발-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "개발구현": [
+          {
+            "member": "코어개발-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "코어개발-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "품질": [
+          {
+            "member": "품질-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "품질-클로드",
+            "engine": "claude"
+          }
+        ],
+        "보안": [
+          {
+            "member": "품질-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "품질-클로드",
+            "engine": "claude"
+          }
+        ],
+        "성능": [
+          {
+            "member": "성능-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "성능-클로드",
+            "engine": "claude"
+          }
+        ],
+        "빌드": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CI": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CD": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "배포": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ]
+      },
+      "pair_ok": true,
+      "dry_run_exit": 0,
+      "dry_run_stderr": "setup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\n",
+      "plugin_warnings": []
+    },
+    {
+      "profile": "web-service",
+      "members": 28,
+      "engines": {
+        "claude": 14,
+        "codex": 14
+      },
+      "parts": {
+        "진행": [
+          {
+            "member": "진행-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "진행-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "기획": [
+          {
+            "member": "기획-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "기획-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "비즈니스분석": [
+          {
+            "member": "비즈니스분석-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "비즈니스분석-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "통계": [
+          {
+            "member": "통계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "통계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "시스템설계": [
+          {
+            "member": "시스템설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "시스템설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "디자인": [
+          {
+            "member": "디자인-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "디자인-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "테스트설계": [
+          {
+            "member": "테스트설계-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "테스트설계-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "코어개발": [
+          {
+            "member": "코어개발-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "코어개발-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "개발구현": [
+          {
+            "member": "개발구현-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "개발구현-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "품질": [
+          {
+            "member": "품질-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "품질-클로드",
+            "engine": "claude"
+          }
+        ],
+        "성능": [
+          {
+            "member": "성능-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "성능-클로드",
+            "engine": "claude"
+          }
+        ],
+        "보안": [
+          {
+            "member": "보안-코덱스",
+            "engine": "codex"
+          },
+          {
+            "member": "보안-클로드",
+            "engine": "claude"
+          }
+        ],
+        "빌드": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CI": [
+          {
+            "member": "빌드-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "빌드-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "CD": [
+          {
+            "member": "CD-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CD-코덱스",
+            "engine": "codex"
+          }
+        ],
+        "배포": [
+          {
+            "member": "CD-클로드",
+            "engine": "claude"
+          },
+          {
+            "member": "CD-코덱스",
+            "engine": "codex"
+          }
+        ]
+      },
+      "pair_ok": true,
+      "dry_run_exit": 0,
+      "dry_run_stderr": "setup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\n",
+      "plugin_warnings": []
+    }
+  ],
+  "probes": [
+    {
+      "name": "single-member",
+      "exit": 0,
+      "stderr": "setup-team.sh: line 103: CI-클로드: command not found\n",
+      "configuration": "기획-클로드 | 기획 | 기획 클로드 | claude | m | high | plan-c\n"
+    },
+    {
+      "name": "same-engine",
+      "exit": 0,
+      "stderr": "setup-team.sh: line 103: CI-클로드: command not found\nsetup-team.sh: line 103: CI-클로드: command not found\n",
+      "configuration": "기획-A | 기획 | A | claude | m | high | a\n기획-B | 기획 | B | claude | m | high | b\n"
+    },
+    {
+      "name": "partial-pass",
+      "configuration": "unit | 테스트설계 | true\nsecurity | 보안 | false\n",
+      "options": [
+        "--only",
+        "unit"
+      ],
+      "exit": 0,
+      "stdout": "▶ unit           (테스트설계) … ✅ 0s\n판정: PASS (통과 1 · 실패 0) — 요약 /private/tmp/vibe-org-audit-u07usn1u/partial-pass/.vibe/runs/20261007-211626/summary.md\n",
+      "stderr": "",
+      "latest": "# 게이트 실행 20261007-211626\n\n- 설정: /private/tmp/vibe-org-audit-u07usn1u/partial-pass/.vibe/gates.conf\n- 커밋: -\n\n| 게이트 | 담당 파트 | 결과 | 시간 | 로그 |\n|---|---|---|---|---|\n| unit | 테스트설계 | ✅ 통과 | 0s | /private/tmp/vibe-org-audit-u07usn1u/partial-pass/.vibe/runs/20261007-211626/unit.log |\n\n- 판정: **PASS** — 통과 1 · 실패 0\n"
+    },
+    {
+      "name": "zero-selection",
+      "configuration": "unit | 테스트설계 | false\nsecurity | 보안 | false\n",
+      "options": [
+        "--only",
+        ","
+      ],
+      "exit": 0,
+      "stdout": "판정: PASS (통과 0 · 실패 0) — 요약 /private/tmp/vibe-org-audit-u07usn1u/zero-selection/.vibe/runs/20261007-211626/summary.md\n",
+      "stderr": "",
+      "latest": "# 게이트 실행 20261007-211626\n\n- 설정: /private/tmp/vibe-org-audit-u07usn1u/zero-selection/.vibe/gates.conf\n- 커밋: -\n\n| 게이트 | 담당 파트 | 결과 | 시간 | 로그 |\n|---|---|---|---|---|\n\n- 판정: **PASS** — 통과 0 · 실패 0\n"
+    },
+    {
+      "name": "pipeline-masks-failure",
+      "configuration": "security | 보안 | false | cat\n",
+      "options": [],
+      "exit": 0,
+      "stdout": "▶ security       (보안) … ✅ 0s\n판정: PASS (통과 1 · 실패 0) — 요약 /private/tmp/vibe-org-audit-u07usn1u/pipeline-masks-failure/.vibe/runs/20261007-211626/summary.md\n",
+      "stderr": "",
+      "latest": "# 게이트 실행 20261007-211626\n\n- 설정: /private/tmp/vibe-org-audit-u07usn1u/pipeline-masks-failure/.vibe/gates.conf\n- 커밋: -\n\n| 게이트 | 담당 파트 | 결과 | 시간 | 로그 |\n|---|---|---|---|---|\n| security | 보안 | ✅ 통과 | 0s | /private/tmp/vibe-org-audit-u07usn1u/pipeline-masks-failure/.vibe/runs/20261007-211626/security.log |\n\n- 판정: **PASS** — 통과 1 · 실패 0\n"
+    },
+    {
+      "name": "missing-required-categories",
+      "configuration": "unit | 테스트설계 | true\n",
+      "options": [],
+      "exit": 0,
+      "stdout": "▶ unit           (테스트설계) … ✅ 0s\n판정: PASS (통과 1 · 실패 0) — 요약 /private/tmp/vibe-org-audit-u07usn1u/missing-required-categories/.vibe/runs/20261007-211626/summary.md\n",
+      "stderr": "",
+      "latest": "# 게이트 실행 20261007-211626\n\n- 설정: /private/tmp/vibe-org-audit-u07usn1u/missing-required-categories/.vibe/gates.conf\n- 커밋: -\n\n| 게이트 | 담당 파트 | 결과 | 시간 | 로그 |\n|---|---|---|---|---|\n| unit | 테스트설계 | ✅ 통과 | 0s | /private/tmp/vibe-org-audit-u07usn1u/missing-required-categories/.vibe/runs/20261007-211626/unit.log |\n\n- 판정: **PASS** — 통과 1 · 실패 0\n"
+    },
+    {
+      "name": "missing-option-value",
+      "configuration": "unit | 테스트설계 | true\n",
+      "options": [
+        "--only"
+      ],
+      "exit": "TIMEOUT",
+      "timeout_seconds": 0.5,
+      "latest": null
+    },
+    {
+      "name": "partial-resets-streak",
+      "rounds": [
+        {
+          "exit": 1,
+          "stdout": "▶ unit           (테스트설계) … ✅ 0s\n▶ security       (보안) … ❌ exit 1, 0s\n- 루프: T-1 1회차\n판정: FAIL (통과 1 · 실패 1) — 요약 /private/tmp/vibe-org-audit-u07usn1u/partial-resets-streak/.vibe/runs/20261007-211626/summary.md\n",
+          "stderr": ""
+        },
+        {
+          "exit": 1,
+          "stdout": "▶ unit           (테스트설계) … ✅ 0s\n▶ security       (보안) … ❌ exit 1, 0s\n- 루프: T-1 2회차\n판정: FAIL (통과 1 · 실패 1) — 요약 /private/tmp/vibe-org-audit-u07usn1u/partial-resets-streak/.vibe/runs/20261007-211626-1/summary.md\n",
+          "stderr": ""
+        },
+        {
+          "exit": 0,
+          "stdout": "▶ unit           (테스트설계) … ✅ 0s\n- 루프: T-1 3회차\n판정: PASS (통과 1 · 실패 0) — 요약 /private/tmp/vibe-org-audit-u07usn1u/partial-resets-streak/.vibe/runs/20261007-211626-2/summary.md\n",
+          "stderr": ""
+        },
+        {
+          "exit": 1,
+          "stdout": "▶ unit           (테스트설계) … ✅ 0s\n▶ security       (보안) … ❌ exit 1, 0s\n- 루프: T-1 4회차\n판정: FAIL (통과 1 · 실패 1) — 요약 /private/tmp/vibe-org-audit-u07usn1u/partial-resets-streak/.vibe/runs/20261007-211626-3/summary.md\n",
+          "stderr": ""
+        }
+      ],
+      "history": "20261007-211626\tFAIL\tsecurity\t/private/tmp/vibe-org-audit-u07usn1u/partial-resets-streak/.vibe/runs/20261007-211626\n20261007-211626\tFAIL\tsecurity\t/private/tmp/vibe-org-audit-u07usn1u/partial-resets-streak/.vibe/runs/20261007-211626-1\n20261007-211626\tPASS\t-\t/private/tmp/vibe-org-audit-u07usn1u/partial-resets-streak/.vibe/runs/20261007-211626-2\n20261007-211626\tFAIL\tsecurity\t/private/tmp/vibe-org-audit-u07usn1u/partial-resets-streak/.vibe/runs/20261007-211626-3\n"
+    }
+  ]
+}

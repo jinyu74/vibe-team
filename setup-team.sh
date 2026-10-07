@@ -84,12 +84,9 @@ ready_pattern() {
 # 페어처럼 여러 멤버가 같은 역할 파일을 쓸 때 각자 자기 이름·엔진·상대를 알게 한다.
 member_identity() {
     local i="$1" j=0 partners="" eng
-    while [ $j -lt $M_COUNT ]; do
-        if [ $j -ne $i ] && [ "${M_ROLE[$j]}" = "${M_ROLE[$i]}" ]; then
-            [ "${M_ENGINE[$j]}" = "codex" ] && eng="Codex" || eng="Claude"
-            partners="${partners:+$partners, }${M_NAME[$j]} ($eng)"
-        fi
-        j=$((j + 1))
+    for j in $(member_partner_indices "$i"); do
+        [ "${M_ENGINE[$j]}" = "codex" ] && eng="Codex" || eng="Claude"
+        partners="${partners:+$partners, }${M_NAME[$j]} ($eng; ${M_ROLE[$j]})"
     done
     [ "${M_ENGINE[$i]}" = "codex" ] && eng="Codex" || eng="Claude"
     local roster="" wt_note
@@ -108,10 +105,10 @@ member_identity() {
 - 프로젝트: ${TEAM_PROJECT:-지정 없음}
 - tmux 창: ${M_WINDOW[$i]}
 - 담당 파트(역할 파일): $(printf '%s' "${M_ROLE[$i]}" | tr '+' '\n' | sed 's|.*|roles/&.md|' | paste -sd ' ' -)
-- 같은 역할의 페어: ${partners:-없음}
+- 담당 파트의 반대 엔진 페어: ${partners:-없음}
 - 부여된 플러그인: ${M_PLUGINS[$i]:-없음} (팀 설정 플러그인 열 — 이 목록 밖의 스킬·플러그인이 설치돼 있다고 가정하지 않는다)
 - 작업 폴더: $wt_note
-- 팀 명단: $roster — 역할 파일·공통 워크플로가 이 명단에 없는 멤버를 부르면 아래 대체 담당에게, 표에도 없으면 진행-클로드에게 보낸다. 겹친 파트 이름(예: `CI-클로드`)은 다른 멤버의 별칭이므로 그대로 보내면 된다 (공통 §1·§10.1)
+- 팀 명단: $roster — 역할 파일·공통 워크플로가 이 명단에 없는 멤버를 부르면 아래 대체 담당에게, 표에도 없으면 진행-클로드에게 보낸다. 겹친 파트 이름(예: \`CI-클로드\`)은 다른 멤버의 별칭이므로 그대로 보내면 된다 (공통 §1·§10.1)
 - 팀 구성은 \`team-send -h\`, 상태는 \`team-status\` 로 확인한다.
 EOF
     if [ -n "${M_DUTY[$i]}" ]; then
@@ -119,7 +116,7 @@ EOF
         printf '%s\n' "${M_DUTY[$i]}" | sed 's/^/- /'
     fi
     if [ "$SUB_COUNT" -gt 0 ]; then
-        printf '\n### 이 팀에 없는 멤버의 대체 담당 (팀 설정 @substitute)\n\n| 역할 파일이 부르는 멤버 | 이 팀의 담당 | 범위 |\n|---|---|---|\n'
+        printf '\n### 부재 멤버의 연락 대체 (팀 설정 @substitute — 실제 겸임·역할 주입 아님)\n\n| 역할 파일이 부르는 멤버 | 이 팀의 연락 담당 | 범위 |\n|---|---|---|\n'
         j=0
         while [ $j -lt $SUB_COUNT ]; do
             printf '| %s | %s | %s |\n' "${SUB_ABSENT[$j]}" "${SUB_TO[$j]}" "${SUB_NOTE[$j]:--}"
@@ -237,14 +234,15 @@ EOF
 write_merged() {
     local idx="$1" f merged_dir="$ROLES_DIR/.merged/$SESSION"
     local merged_file="$merged_dir/${M_NAME[$idx]}.md"
-    mkdir -p "$merged_dir"
+    mkdir -p "$merged_dir" || return 1
     {
-        member_identity "$idx"
-        [ -f "$ROLES_DIR/_team-workflow.md" ] && cat "$ROLES_DIR/_team-workflow.md"
+        member_identity "$idx" || return 1
+        cat "$ROLES_DIR/_team-workflow.md" || return 1
         for f in $(role_files "${M_ROLE[$idx]}"); do
-            printf "\n\n---\n\n"; cat "$f"
+            printf "\n\n---\n\n" || return 1
+            cat "$f" || return 1
         done
-    } > "$merged_file"
+    } > "$merged_file" || return 1
     echo "$merged_file"
 }
 
@@ -258,7 +256,7 @@ start_member_in_pane() {
 
     local merged_dir="$ROLES_DIR/.merged/$SESSION"
     local merged_file
-    merged_file="$(write_merged "$idx")"
+    merged_file="$(write_merged "$idx")" || return 1
 
     # team-send 헬퍼를 PATH 에 노출 (페인 간 메시지 전송용)
     # TEAM_MEMBER·TEAM_ENGINE: 체크포인트 훅(bin/team-checkpoint)이 멤버를 식별하는 데 쓴다.
@@ -362,7 +360,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
     while [ $i -lt $M_COUNT ]; do
         M_DIR[$i]="$WORKDIR"
         [ "${M_WORKTREE[$i]}" = 1 ] && M_DIR[$i]="$(git -C "$WORKDIR" rev-parse --show-toplevel 2>/dev/null || echo "$WORKDIR")-wt/${M_NAME[$i]}"
-        f="$(write_merged "$i")"
+        f="$(write_merged "$i")" || { echo "역할 주입 생성 실패: ${M_NAME[$i]}" >&2; exit 1; }
         printf '  %-3s %-12s %-24s %-7s %-22s %-6s %s\n' "$i" "[${M_WINDOW[$i]}]" "${M_NAME[$i]}" "${M_ENGINE[$i]}" "${M_MODEL[$i]}" "${M_EFFORT[$i]}" "$(wc -c < "$f" | tr -d ' ')B"
         i=$((i + 1))
     done

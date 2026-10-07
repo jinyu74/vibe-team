@@ -13,8 +13,8 @@
 # '@project <설명>' 줄은 팀의 프로젝트 종류(TEAM_PROJECT). 멤버 정체 블록에 표시되어
 # 역할 파일의 프로젝트 유형별 항목(예: 학습 게임 전용)을 적용할지 판단하는 기준이 된다.
 # '@worktree <이름...>' 줄은 그 멤버들을 작업 폴더 저장소의 전용 worktree 에서 기동한다 (브랜치·인덱스 분리).
-# '@substitute <팀에 없는 이름> <대체 담당> [범위]' 줄은 역할 파일이 부르는 부재 멤버를 이 팀에서 누가 맡는지 정한다.
-# '@duty <이름> <책임>' 줄은 이 프로젝트에서 그 멤버의 책임을 정체 블록에 넣는다 (역할 파일보다 우선).
+# '@substitute <팀에 없는 이름> <대체 담당> [범위]'는 연락 경로만 지정한다. 실제 겸임은 역할파일 열에 추가한다.
+# '@duty <이름> <책임>'은 해당 멤버와 파트별 반대 엔진 담당자에게 공통 프로젝트 책임을 주입한다.
 #   실패 시 stderr 에 사유를 출력하고 1 반환.
 
 _trim() {
@@ -78,6 +78,15 @@ EOF
             echo "$file:$lineno: 형식 오류 — '이름 | 역할파일 | 페인 라벨 | 엔진 | 모델 | effort | 별칭 | 플러그인(선택)'" >&2
             return 1
         fi
+        role="${role:-$name}"
+        case "$role" in +*|*+|*++*|*[[:space:]/\\]*)
+            echo "$file:$lineno: 잘못된 역할 목록 '$role' — 파트 이름을 +로 연결하세요" >&2; return 1 ;;
+        esac
+        local seen_parts="" part
+        for part in $(printf '%s' "$role" | tr '+' ' '); do
+            case "+$seen_parts+" in *"+$part+"*) echo "$file:$lineno: 중복 파트 '$part'" >&2; return 1 ;; esac
+            seen_parts="${seen_parts:+$seen_parts+}$part"
+        done
         case "$engine" in
             claude|codex) ;;
             *) echo "$file:$lineno: 잘못된 엔진 '$engine' (claude/codex)" >&2; return 1 ;;
@@ -105,6 +114,7 @@ EOF
     done < "$file"
 
     [ "$M_COUNT" -gt 0 ] || { echo "$file: 멤버가 없습니다" >&2; return 1; }
+    validate_member_pairs "$file" || return 1
 
     # 지시어의 멤버 이름 검증 — 멤버 행보다 앞에 적어도 되므로 다 읽은 뒤 해석한다.
     for who in $wt_names; do
@@ -116,13 +126,29 @@ EOF
         lineno="${rest%%|*}"; rest="${rest#*|}"; who="${rest%% *}"
         i="$(_name_index "$who")"
         [ -n "$i" ] || { echo "$file:$lineno: @duty 의 '$who' 는 팀 멤버가 아닙니다" >&2; return 1; }
-        M_DUTY[$i]="${M_DUTY[$i]:+${M_DUTY[$i]}
-}$(_trim "${rest#"$who"}")"
+        local duty="$(_trim "${rest#"$who"}")" partner
+        [ -n "$duty" ] || { echo "$file:$lineno: @duty 책임이 비어 있습니다" >&2; return 1; }
+        # 한쪽 이름으로 지정해도 양쪽이 같은 책임을 받는다. 서로 다른 역할 문자열의 겹친 파트도 포함한다.
+        for partner in "$i" $(member_partner_indices "$i"); do
+            case "
+${M_DUTY[$partner]}
+" in *"
+$duty
+"*) ;;
+                *) M_DUTY[$partner]="${M_DUTY[$partner]:+${M_DUTY[$partner]}
+}$duty" ;;
+            esac
+        done
     done
     i=0
     while [ $i -lt $SUB_COUNT ]; do
-        [ -z "$(_name_index "${SUB_ABSENT[$i]}")" ] || { echo "$file: @substitute 의 '${SUB_ABSENT[$i]}' 는 이 팀 멤버입니다 (부재 멤버만 적는다)" >&2; return 1; }
+        [ -z "$(member_index "${SUB_ABSENT[$i]}")" ] || { echo "$file: @substitute 의 '${SUB_ABSENT[$i]}' 는 이 팀 멤버 또는 별칭입니다 (부재 멤버만 적는다)" >&2; return 1; }
         [ -n "$(_name_index "${SUB_TO[$i]}")" ] || { echo "$file: @substitute 대체 담당 '${SUB_TO[$i]}' 는 팀 멤버가 아닙니다" >&2; return 1; }
+        local target_index="$(_name_index "${SUB_TO[$i]}")" expected_engine=""
+        case "${SUB_ABSENT[$i]}" in *-클로드) expected_engine=claude ;; *-코덱스) expected_engine=codex ;; esac
+        [ -z "$expected_engine" ] || [ "${M_ENGINE[$target_index]}" = "$expected_engine" ] || {
+            echo "$file: @substitute '${SUB_ABSENT[$i]}' 대체 담당의 엔진이 다릅니다" >&2; return 1;
+        }
         i=$((i + 1))
     done
 
@@ -143,6 +169,41 @@ EOF
             done
         done
         i=$((i + 1))
+    done
+}
+
+# 파트 단위로 검사한다. 한 파트에 최소 두 멤버와 양쪽 엔진이 있어야 하며 2명보다 많아도 된다.
+validate_member_pairs() {
+    local file="$1" i=0 part seen="" j c x
+    while [ $i -lt $M_COUNT ]; do
+        for part in $(printf '%s' "${M_ROLE[$i]}" | tr '+' ' '); do
+            case "+$seen+" in *"+$part+"*) continue ;; esac
+            seen="${seen:+$seen+}$part"; c=0; x=0; j=0
+            while [ $j -lt $M_COUNT ]; do
+                if member_has_part "$j" "$part"; then
+                    case "${M_ENGINE[$j]}" in claude) c=$((c + 1)) ;; codex) x=$((x + 1)) ;; esac
+                fi
+                j=$((j + 1))
+            done
+            [ $c -ge 1 ] && [ $x -ge 1 ] || {
+                echo "$file: 파트 '$part' 페어 미충족 — Claude ${c}명, Codex ${x}명 (각 엔진 최소 1명)" >&2; return 1;
+            }
+        done
+        i=$((i + 1))
+    done
+}
+
+member_has_part() { case "+${M_ROLE[$1]}+" in *"+$2+"*) return 0 ;; esac; return 1; }
+
+member_partner_indices() {
+    local i="$1" j=0 part
+    while [ $j -lt $M_COUNT ]; do
+        if [ "${M_ENGINE[$i]}" != "${M_ENGINE[$j]}" ]; then
+            for part in $(printf '%s' "${M_ROLE[$i]}" | tr '+' ' '); do
+                if member_has_part "$j" "$part"; then echo "$j"; break; fi
+            done
+        fi
+        j=$((j + 1))
     done
 }
 

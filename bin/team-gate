@@ -2,25 +2,41 @@
 # team-gate — 그린 루프 게이트 실행기. 프로젝트가 정한 테스트·품질·성능·보안 명령을 차례로 돌려 통과/실패를 근거로 남긴다 (공통 §6.2).
 # bash 3.2 호환 (macOS 기본 bash).
 #
-# 사용: team-gate [--config <파일>] [--only <이름,...>] [--label <작업 ID>] [--list]
+# 사용: team-gate [--scope task|release] [--config <파일>] [--only <이름,...>] [--label <작업 ID>] [--list]
 #   설정: --config → $VIBE_GATES → 현재 폴더에서 위로 찾은 .vibe/gates.conf
-#   형식: 이름 | 담당 파트 | 명령      ('#' 주석, 빈 줄 무시. 명령은 설정 파일의 프로젝트 루트에서 bash -c 로 실행)
-#   기록: <루트>/.vibe/runs/<시각>/<이름>.log, summary.md  ·  최신 요약 <루트>/.vibe/runs/latest.md
+#   형식: 이름 | 담당 파트 [scope=all|task|release] [timeout=<초>] | 명령
+#         ('#' 주석, 빈 줄 무시. 명령은 프로젝트 루트에서 bash -o pipefail -c 로 실행, 환경 변수 VIBE_SCOPE·VIBE_LABEL 제공)
+#   범위: --scope task = 작업 완료 판정(scope=all·task 게이트), release(기본) = 제품 전체 판정(scope=all·release 게이트) (§6.3)
+#   제한시간: 게이트별 timeout=, 없으면 $VIBE_GATE_TIMEOUT (기본 1800초). 초과하면 프로세스 그룹을 종료하고 TIMEOUT 실패로 기록
+#   중단: INT·TERM·HUP 을 받으면 실행 중 게이트를 종료하고 남은 게이트를 미실행으로 남긴 채 INCOMPLETE 로 기록 (exit 130)
+#   기록: <루트>/.vibe/runs/<시각>/ — 게이트별 로그, summary.md, result.txt(기계 판독, 릴리스 검사기 입력)
+#         최신 요약 latest.md · 마지막 전체 실행 latest-full.md(범위별 latest-full-<범위>.md)
 #   --label: <루트>/.vibe/runs/history/<작업 ID>.tsv 에 회차를 쌓고, 같은 게이트 연속 실패 횟수를 알린다 (§6.4 탈출 기준)
-# 종료 코드: 0 = 전부 통과, 1 = 하나 이상 실패, 2 = 설정·사용법 오류
+# 종료 코드: 0 = 선택 검사 통과(FULL_PASS/PARTIAL_PASS), 1 = 실패(TIMEOUT 포함), 2 = 설정·사용법 오류, 130 = 중단(INCOMPLETE).
+#            릴리스 근거는 scope=release 의 FULL_PASS 만 (team-release-check 가 확인).
 
-set -u
-CONFIG="${VIBE_GATES:-}" ONLY="" LABEL="" LIST=0
+set -uo pipefail
+CONFIG="${VIBE_GATES:-}" ONLY="" LABEL="" LIST=0 SCOPE="release"
+DEFAULT_TIMEOUT="${VIBE_GATE_TIMEOUT:-1800}"
 while [ $# -gt 0 ]; do
     case "$1" in
-        --config) CONFIG="${2:-}"; shift 2 ;;
-        --only) ONLY="${2:-}"; shift 2 ;;
-        --label) LABEL="${2:-}"; shift 2 ;;
+        --config|--only|--label|--scope)
+            [ $# -ge 2 ] && [ -n "$2" ] && [[ "$2" != --* ]] || {
+                echo "$1: 비어 있지 않은 옵션 값이 필요합니다" >&2; exit 2;
+            } ;;
+    esac
+    case "$1" in
+        --config) CONFIG="$2"; shift 2 ;;
+        --only) ONLY="$2"; shift 2 ;;
+        --label) LABEL="$2"; shift 2 ;;
+        --scope) SCOPE="$2"; shift 2 ;;
         --list) LIST=1; shift ;;
-        -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "알 수 없는 옵션: $1 (team-gate -h)" >&2; exit 2 ;;
     esac
 done
+case "$SCOPE" in task|release) ;; *) echo "--scope: task 또는 release ('$SCOPE')" >&2; exit 2 ;; esac
+case "$DEFAULT_TIMEOUT" in ''|*[!0-9]*|0) echo "VIBE_GATE_TIMEOUT: 양의 정수(초) ('$DEFAULT_TIMEOUT')" >&2; exit 2 ;; esac
 
 if [ -z "$CONFIG" ]; then
     # 현재 폴더에서 위로 올라가며 .vibe/gates.conf 를 찾는다. 없으면 git 최상위(또는 현재 폴더) 기준 경로로 안내.
@@ -35,96 +51,232 @@ CONFIG="$(cd "$(dirname "$CONFIG")" && pwd)/$(basename "$CONFIG")"
 ROOT="$(dirname "$CONFIG")"; [ "$(basename "$ROOT")" = ".vibe" ] && ROOT="$(dirname "$ROOT")"
 
 trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
+sha256_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{ print $1 }'; }
 
-G_NAME=(); G_PART=(); G_CMD=(); n=0 lineno=0
+G_NAME=(); G_PART=(); G_SCOPE=(); G_TIMEOUT=(); G_CMD=(); n=0 lineno=0
 while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     line="$(trim "$line")"
     case "$line" in ''|'#'*) continue ;; esac
     name="$(trim "${line%%|*}")"; rest="${line#*|}"
-    part="$(trim "${rest%%|*}")"; cmd="$(trim "${rest#*|}")"
-    if [ "$rest" = "$line" ] || [ "$cmd" = "$rest" ] || [ -z "$name" ] || [ -z "$cmd" ]; then
-        echo "$CONFIG:$lineno: 형식 오류 — '이름 | 담당 파트 | 명령'" >&2; exit 2
+    partcol="$(trim "${rest%%|*}")"; cmd="$(trim "${rest#*|}")"
+    if [ "$rest" = "$line" ] || [ "$cmd" = "$rest" ] || [ -z "$name" ] || [ -z "$partcol" ] || [ -z "$cmd" ]; then
+        echo "$CONFIG:$lineno: 형식 오류 — '이름 | 담당 파트 [scope=…] [timeout=…] | 명령'" >&2; exit 2
     fi
     case "$name" in *[!A-Za-z0-9._-]*) echo "$CONFIG:$lineno: 이름은 영문·숫자·._- 만 ('$name')" >&2; exit 2 ;; esac
     i=0; while [ $i -lt $n ]; do [ "${G_NAME[$i]}" = "$name" ] && { echo "$CONFIG:$lineno: 중복 이름 '$name'" >&2; exit 2; }; i=$((i + 1)); done
-    G_NAME[$n]="$name"; G_PART[$n]="$part"; G_CMD[$n]="$cmd"; n=$((n + 1))
+    # 담당 파트 칸: 첫 단어 = 파트, 나머지 = key=value 속성
+    set -- $partcol
+    part="$1"; shift; gscope="all"; gtimeout="$DEFAULT_TIMEOUT"
+    for attr in "$@"; do
+        case "$attr" in
+            scope=all|scope=task|scope=release) gscope="${attr#scope=}" ;;
+            timeout=*) gtimeout="${attr#timeout=}"
+                case "$gtimeout" in ''|*[!0-9]*|0) echo "$CONFIG:$lineno: timeout 은 양의 정수(초) ('$attr')" >&2; exit 2 ;; esac ;;
+            *) echo "$CONFIG:$lineno: 알 수 없는 속성 '$attr' (scope=all|task|release, timeout=<초>)" >&2; exit 2 ;;
+        esac
+    done
+    G_NAME[$n]="$name"; G_PART[$n]="$part"; G_SCOPE[$n]="$gscope"; G_TIMEOUT[$n]="$gtimeout"; G_CMD[$n]="$cmd"; n=$((n + 1))
 done < "$CONFIG"
 [ $n -gt 0 ] || { echo "$CONFIG: 게이트가 없습니다" >&2; exit 2; }
 
+in_scope() { [ "${G_SCOPE[$1]}" = all ] || [ "${G_SCOPE[$1]}" = "$SCOPE" ]; }
+
+# 필수 검증 책임은 설정에서 생략해도 없어지지 않는다. 범위마다 네 파트의 게이트가 있어야 한다. 적용 제외·기준 완화는 허용하지 않는다.
+for required_part in 테스트설계 품질 성능 보안; do
+    hit=0; i=0
+    while [ $i -lt $n ]; do
+        in_scope $i && [ "${G_PART[$i]}" = "$required_part" ] && hit=1
+        i=$((i + 1))
+    done
+    [ $hit -eq 1 ] || { echo "$CONFIG: 범위 '$SCOPE' 의 필수 게이트 담당 파트 누락: $required_part" >&2; exit 2; }
+done
+
 if [ -n "$ONLY" ]; then
-    for o in $(printf '%s' "$ONLY" | tr ',' ' '); do
-        hit=0; i=0; while [ $i -lt $n ]; do [ "${G_NAME[$i]}" = "$o" ] && hit=1; i=$((i + 1)); done
-        [ $hit -eq 1 ] || { echo "--only: 알 수 없는 게이트 '$o'" >&2; exit 2; }
+    rest="$ONLY"; ONLY=""
+    while :; do
+        o="$(trim "${rest%%,*}")"
+        [ -n "$o" ] || { echo "--only: 빈 게이트 이름은 허용하지 않습니다" >&2; exit 2; }
+        hit=-1; i=0; while [ $i -lt $n ]; do [ "${G_NAME[$i]}" = "$o" ] && hit=$i; i=$((i + 1)); done
+        [ $hit -ge 0 ] || { echo "--only: 알 수 없는 게이트 '$o'" >&2; exit 2; }
+        in_scope $hit || { echo "--only: '$o' 는 범위 '$SCOPE' 밖의 게이트입니다 (scope=${G_SCOPE[$hit]})" >&2; exit 2; }
+        case ",$ONLY," in *",$o,"*) echo "--only: 중복 게이트 '$o'" >&2; exit 2 ;; esac
+        ONLY="${ONLY:+$ONLY,}$o"
+        case "$rest" in *,*) rest="${rest#*,}" ;; *) break ;; esac
     done
 fi
-selected() { [ -z "$ONLY" ] && return 0; case ",$ONLY," in *",$1,"*) return 0 ;; esac; return 1; }
+selected() { in_scope "$1" || return 1; [ -z "$ONLY" ] && return 0; case ",$ONLY," in *",${G_NAME[$1]},"*) return 0 ;; esac; return 1; }
+
+SELECTED="" SKIPPED="" OUT_OF_SCOPE="" selected_count=0
+i=0
+while [ $i -lt $n ]; do
+    if selected $i; then
+        SELECTED="${SELECTED:+$SELECTED,}${G_NAME[$i]}"; selected_count=$((selected_count + 1))
+    elif in_scope $i; then
+        SKIPPED="${SKIPPED:+$SKIPPED,}${G_NAME[$i]}"
+    else
+        OUT_OF_SCOPE="${OUT_OF_SCOPE:+$OUT_OF_SCOPE,}${G_NAME[$i]}"
+    fi
+    i=$((i + 1))
+done
+[ $selected_count -gt 0 ] || { echo "실행할 게이트가 없습니다" >&2; exit 2; }
 
 if [ $LIST -eq 1 ]; then
-    i=0; while [ $i -lt $n ]; do printf '%-14s %-10s %s\n' "${G_NAME[$i]}" "${G_PART[$i]}" "${G_CMD[$i]}"; i=$((i + 1)); done
+    i=0; while [ $i -lt $n ]; do printf '%-14s %-10s %-8s %6ss  %s\n' "${G_NAME[$i]}" "${G_PART[$i]}" "${G_SCOPE[$i]}" "${G_TIMEOUT[$i]}" "${G_CMD[$i]}"; i=$((i + 1)); done
     exit 0
 fi
 
 TS="$(date +%Y%m%d-%H%M%S)"
 RUN="$ROOT/.vibe/runs/$TS"; k=1
-while [ -e "$RUN" ]; do RUN="$ROOT/.vibe/runs/$TS-$k"; k=$((k + 1)); done
-mkdir -p "$RUN"
-SUMMARY="$RUN/summary.md"
+mkdir -p "$ROOT/.vibe/runs" || exit 2
+while ! mkdir "$RUN" 2>/dev/null; do
+    [ -e "$RUN" ] || { echo "실행 기록 디렉터리 생성 실패: $RUN" >&2; exit 2; }
+    RUN="$ROOT/.vibe/runs/$TS-$k"; k=$((k + 1))
+done
+SUMMARY="$RUN/summary.md" RESULT="$RUN/result.txt"
+SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo -)"
+# pipefail 아래에서 'git status | grep -q' 는 grep 이 먼저 끝나면 SIGPIPE 로 실패해 미커밋 표시가 빠진다 — 출력을 받아 검사한다.
+DIRTY=0; [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ] && DIRTY=1
+POLICY="$(sha256_of "$CONFIG")"
+STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# result.txt — 시작할 때 RUNNING 으로 쓰고 끝날 때 덮어쓴다. 비정상 종료(kill -9 등)면 RUNNING 이 남아 통과 근거가 되지 않는다.
+write_result() {
+    {
+        echo "verdict=$1"
+        echo "scope=$SCOPE"
+        echo "sha=$SHA"
+        echo "dirty=$DIRTY"
+        echo "policy_sha256=$POLICY"
+        echo "config=$CONFIG"
+        echo "label=$LABEL"
+        echo "selected=$SELECTED"
+        echo "executed=${EXECUTED:-}"
+        echo "skipped=$SKIPPED"
+        echo "out_of_scope=$OUT_OF_SCOPE"
+        echo "failed=${FAILED:-}"
+        echo "timeouts=${TIMEOUTS:-}"
+        echo "not_run=${NOT_RUN:-}"
+        echo "started=$STARTED"
+        echo "finished=${FINISHED:-}"
+    } > "$RESULT"
+}
+EXECUTED="" FAILED="" TIMEOUTS="" NOT_RUN="" FINISHED=""
+write_result RUNNING || exit 2
+
 {
-    echo "# 게이트 실행 $TS${LABEL:+ — $LABEL}"
+    echo "# 게이트 실행 $TS${LABEL:+ — $LABEL} (범위: $SCOPE)"
     echo
-    echo "- 설정: $CONFIG"
-    echo "- 커밋: $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo '-')$(git -C "$ROOT" status --porcelain 2>/dev/null | grep -q . && echo ' (미커밋 변경 있음)')"
+    echo "- 설정: $CONFIG (sha256 ${POLICY:0:12})"
+    echo "- 커밋: $SHA$([ $DIRTY -eq 1 ] && echo ' (미커밋 변경 있음)')"
+    echo "- 범위: $SCOPE — $([ "$SCOPE" = task ] && echo '작업 완료 판정 (제품 릴리스 근거 아님)' || echo '제품 전체 판정')"
+    echo "- 선택 게이트: $SELECTED"
+    echo "- 미실행 게이트: ${SKIPPED:--}"
+    echo "- 범위 밖 게이트: ${OUT_OF_SCOPE:--}"
+    echo "- 릴리스 정책: 차단 결함 및 CRITICAL·HIGH·MEDIUM 0건 (결함 판정·승인은 team-release-check)"
     echo
     echo "| 게이트 | 담당 파트 | 결과 | 시간 | 로그 |"
     echo "|---|---|---|---|---|"
-} > "$SUMMARY"
+} > "$SUMMARY" || exit 2
 
-FAILED="" pass=0 fail=0
+# 게이트마다 별도 프로세스 그룹에서 실행해 제한시간 초과·중단 시 하위 프로세스까지 종료한다.
+set -m
+INTERRUPTED=0 CUR_PID=""
+kill_group() { [ -n "$1" ] || return 0; kill -TERM -- "-$1" 2>/dev/null; sleep 1; kill -KILL -- "-$1" 2>/dev/null; return 0; }
+on_signal() { INTERRUPTED=1; kill_group "$CUR_PID"; }
+trap on_signal INT TERM HUP
+
+pass=0 fail=0
 i=0
 while [ $i -lt $n ]; do
-    if selected "${G_NAME[$i]}"; then
-        log="$RUN/${G_NAME[$i]}.log"
+    if selected $i; then
+        if [ $INTERRUPTED -eq 1 ]; then
+            NOT_RUN="${NOT_RUN:+$NOT_RUN,}${G_NAME[$i]}"
+            echo "| ${G_NAME[$i]} | ${G_PART[$i]} | ⏹ 미실행 (중단) | - | - |" >> "$SUMMARY"
+            i=$((i + 1)); continue
+        fi
+        log="$RUN/${G_NAME[$i]}.log" limit="${G_TIMEOUT[$i]}" timed_out=0
         printf '▶ %-14s (%s) … ' "${G_NAME[$i]}" "${G_PART[$i]}"
         t0=$(date +%s)
-        (cd "$ROOT" && bash -c "${G_CMD[$i]}") > "$log" 2>&1 < /dev/null
-        rc=$?
+        (cd "$ROOT" && VIBE_SCOPE="$SCOPE" VIBE_LABEL="$LABEL" exec bash -o pipefail -c "${G_CMD[$i]}") > "$log" 2>&1 < /dev/null &
+        CUR_PID=$!
+        while kill -0 "$CUR_PID" 2>/dev/null; do
+            [ $INTERRUPTED -eq 1 ] && break
+            if [ $(( $(date +%s) - t0 )) -ge "$limit" ]; then
+                timed_out=1; echo "[team-gate] 제한시간 ${limit}s 초과 — 프로세스 그룹 종료" >> "$log"
+                kill_group "$CUR_PID"; break
+            fi
+            sleep 0.2
+        done
+        wait "$CUR_PID" 2>/dev/null; rc=$?
+        CUR_PID=""
         dt=$(( $(date +%s) - t0 ))
-        if [ $rc -eq 0 ]; then
+        if [ $INTERRUPTED -eq 1 ]; then
+            # 중단된 게이트는 통과도 실패도 아니다 — 실행 목록에 넣지 않는다(연속 실패 이력을 바꾸지 않음).
+            echo "⏹ 중단"; NOT_RUN="${NOT_RUN:+$NOT_RUN,}${G_NAME[$i]}"; res="⏹ 중단 (미완료)"
+        elif [ $timed_out -eq 1 ]; then
+            echo "⏱ TIMEOUT ${limit}s"; fail=$((fail + 1)); res="⏱ 실패 (TIMEOUT ${limit}s)"
+            EXECUTED="${EXECUTED:+$EXECUTED,}${G_NAME[$i]}"
+            FAILED="${FAILED:+$FAILED,}${G_NAME[$i]}"; TIMEOUTS="${TIMEOUTS:+$TIMEOUTS,}${G_NAME[$i]}"
+            tail -n 15 "$log" | sed 's/^/   │ /'
+        elif [ $rc -eq 0 ]; then
             echo "✅ ${dt}s"; pass=$((pass + 1)); res="✅ 통과"
+            EXECUTED="${EXECUTED:+$EXECUTED,}${G_NAME[$i]}"
         else
             echo "❌ exit $rc, ${dt}s"; fail=$((fail + 1)); res="❌ 실패 (exit $rc)"
+            EXECUTED="${EXECUTED:+$EXECUTED,}${G_NAME[$i]}"
             FAILED="${FAILED:+$FAILED,}${G_NAME[$i]}"
             tail -n 15 "$log" | sed 's/^/   │ /'
         fi
-        echo "| ${G_NAME[$i]} | ${G_PART[$i]} | $res | ${dt}s | $log |" >> "$SUMMARY"
+        echo "| ${G_NAME[$i]} | ${G_PART[$i]} | $res | ${dt}s | $log |" >> "$SUMMARY" || exit 2
     fi
     i=$((i + 1))
 done
+trap - INT TERM HUP
+set +m
 
-if [ $fail -eq 0 ]; then verdict="PASS"; else verdict="FAIL"; fi
-{ echo; echo "- 판정: **$verdict** — 통과 $pass · 실패 $fail${FAILED:+ ($FAILED)}"; } >> "$SUMMARY"
+if [ $INTERRUPTED -eq 1 ]; then verdict="INCOMPLETE"
+elif [ -n "$SKIPPED" ]; then
+    if [ $fail -eq 0 ]; then verdict="PARTIAL_PASS"; else verdict="PARTIAL_FAIL"; fi
+else
+    if [ $fail -eq 0 ]; then verdict="FULL_PASS"; else verdict="FAIL"; fi
+fi
+FINISHED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+{
+    echo
+    echo "- 판정: **$verdict** — 통과 $pass · 실패 $fail${FAILED:+ ($FAILED)}${TIMEOUTS:+ · 시간 초과 ($TIMEOUTS)}${NOT_RUN:+ · 중단으로 미실행 ($NOT_RUN)}"
+} >> "$SUMMARY" || exit 2
+write_result "$verdict" || exit 2
 
 if [ -n "$LABEL" ]; then
-    hist_dir="$ROOT/.vibe/runs/history"; mkdir -p "$hist_dir"
+    hist_dir="$ROOT/.vibe/runs/history"; mkdir -p "$hist_dir" || exit 2
     hist="$hist_dir/$(printf '%s' "$LABEL" | tr -c 'A-Za-z0-9._-' '_').tsv"
-    printf '%s\t%s\t%s\t%s\n' "$TS" "$verdict" "${FAILED:--}" "$RUN" >> "$hist"
-    round=$(wc -l < "$hist" | tr -d ' ')
-    msg="- 루프: $LABEL ${round}회차"
+    # 5열 = 실제로 끝까지 실행된 게이트, 6열 = 범위. 4열 이전 형식은 전체 실행, 범위 없는 행은 release 로 해석한다.
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$TS" "$verdict" "${FAILED:--}" "$RUN" "${EXECUTED:--}" "$SCOPE" >> "$hist" || exit 2
+    round=$(awk -F'\t' -v s="$SCOPE" '{ sc = (NF >= 6 ? $6 : "release") } sc == s && $2 !~ /^(PARTIAL_|INCOMPLETE)/ { n++ } END { print n + 0 }' "$hist")
+    if [ "$verdict" = INCOMPLETE ]; then msg="- 중단: $LABEL (회차로 세지 않음, $SCOPE 전체 검증 ${round}회 완료)"
+    elif [ -n "$SKIPPED" ]; then msg="- 부분 실행: $LABEL (전체 검증 ${round}회 완료)"
+    else msg="- 루프: $LABEL ${round}회차 (범위 $SCOPE)"; fi
     if [ -n "$FAILED" ]; then
-        # 이번에 실패한 게이트마다 직전부터 연속으로 실패한 회차 수
+        # 이번에 실패한 게이트마다, 그 게이트가 실제로 실행된 회차만 보고 직전부터 연속 실패한 횟수
         for g in $(printf '%s' "$FAILED" | tr ',' ' '); do
-            streak=$(awk -F'\t' -v g="$g" '{ ok = (index("," $3 ",", "," g ",") > 0) } { s = ok ? s + 1 : 0 } END { print s + 0 }' "$hist")
+            streak=$(awk -F'\t' -v g="$g" 'NF < 5 || index("," $5 ",", "," g ",") > 0 { failed = (index("," $3 ",", "," g ",") > 0); s = failed ? s + 1 : 0 } END { print s + 0 }' "$hist")
             [ "$streak" -ge 3 ] && msg="$msg
 - ⚠️ '$g' 연속 실패 ${streak}회 — 같은 수정 반복을 멈추고 원인 분석·상류 변경 요청을 검토 (공통 §6.4)"
         done
     fi
     [ "$round" -ge 5 ] && [ "$verdict" = "FAIL" ] && msg="$msg
 - 🚨 ${round}회차까지 미통과 — 진행 파트에 에스컬레이션 (공통 §6.4)"
-    printf '%s\n' "$msg" >> "$SUMMARY"
+    printf '%s\n' "$msg" >> "$SUMMARY" || exit 2
     printf '%s\n' "$msg"
 fi
 
-cp "$SUMMARY" "$ROOT/.vibe/runs/latest.md"
-echo "판정: $verdict (통과 $pass · 실패 $fail) — 요약 $SUMMARY"
+cp "$SUMMARY" "$ROOT/.vibe/runs/latest.md" || exit 2
+# 부분·중단 실행은 마지막 전체 검증의 결과를 덮어쓰지 않는다. 이 파일은 마지막 성공이 아닌 마지막 전체 실행이다.
+if [ -z "$SKIPPED" ] && [ "$verdict" != INCOMPLETE ]; then
+    cp "$SUMMARY" "$ROOT/.vibe/runs/latest-full-$SCOPE.md" || exit 2
+    [ "$SCOPE" = release ] && { cp "$SUMMARY" "$ROOT/.vibe/runs/latest-full.md" || exit 2; }
+fi
+echo "판정: $verdict (범위 $SCOPE · 통과 $pass · 실패 $fail) — 요약 $SUMMARY"
+[ "$verdict" = INCOMPLETE ] && exit 130
 [ $fail -eq 0 ]
