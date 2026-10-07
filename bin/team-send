@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+# 팀 페인 간 메시지 전송 헬퍼 — tmux send-keys + bracketed paste 기반
+
+set -euo pipefail
+
+# ── 멤버 매핑 — 팀 설정 teams/*.conf (행 순서 = 멤버 번호) ──
+# 설정 파일 우선순위: 세션 옵션 @team_members_file (setup-team.sh 가 기록한 기동 시점 스냅샷)
+#   → 환경변수 TEAM_MEMBERS_FILE → 기본 팀 teams/discovery.conf
+TEAM_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$TEAM_HOME/lib/members.sh"
+. "$TEAM_HOME/lib/codex.sh"
+
+name_for() {
+    if [ -n "${1:-}" ] && [ "$1" -lt "$M_COUNT" ] 2>/dev/null; then
+        echo "${M_NAME[$1]}"
+    else
+        echo 외부
+    fi
+}
+
+usage() {
+    cat >&2 <<'EOF'
+Usage:
+  team-send <recipient> "<message>"
+  team-send <recipient> -f <file>
+  echo "<message>" | team-send <recipient>
+
+옵션:
+  --session <name>  대상 tmux 세션 (기본: 현재 세션 또는 team)
+  --no-header       발신자/타임스탬프 헤더 생략
+EOF
+    # 현재 세션의 팀 설정을 우선 보여 준다
+    local f
+    local s="${TEAM_SESSION:-}"
+    [ -n "$s" ] || s="$(tmux display-message -p ${TMUX_PANE:+-t "$TMUX_PANE"} '#S' 2>/dev/null || true)"
+    f="$(tmux show-options -v -t "$s" @team_members_file 2>/dev/null || true)"
+    if load_members "${f:-${TEAM_MEMBERS_FILE:-$TEAM_HOME/teams/discovery.conf}}" 2>/dev/null; then
+        echo "" >&2
+        echo "Recipients (이름 / 별칭):" >&2
+        local i=0
+        while [ $i -lt $M_COUNT ]; do
+            printf '  pane %-2s %s  %s\n' "$i" "${M_NAME[$i]}" "${M_ALIASES[$i]}" >&2
+            i=$((i + 1))
+        done
+    fi
+    exit 1
+}
+
+# ── 인자 파싱 ────────────────────────────────────────────────
+SESSION_OVERRIDE=""
+NO_HEADER=0
+RECIPIENT=""
+MESSAGE=""
+FROM_FILE=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --session) SESSION_OVERRIDE="$2"; shift 2 ;;
+        --no-header) NO_HEADER=1; shift ;;
+        -f|--file) FROM_FILE="$2"; shift 2 ;;
+        -h|--help) usage ;;
+        -*) echo "Unknown option: $1" >&2; usage ;;
+        *)
+            if [ -z "$RECIPIENT" ]; then
+                RECIPIENT="$1"
+            elif [ -z "$MESSAGE" ]; then
+                MESSAGE="$1"
+            else
+                MESSAGE="$MESSAGE $1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+[ -z "$RECIPIENT" ] && usage
+
+# ── 메시지 수집 ──────────────────────────────────────────────
+if [ -n "$FROM_FILE" ]; then
+    [ -f "$FROM_FILE" ] || { echo "파일 없음: $FROM_FILE" >&2; exit 1; }
+    MESSAGE="$(cat "$FROM_FILE")"
+elif [ -z "$MESSAGE" ] && [ ! -t 0 ]; then
+    MESSAGE="$(cat)"
+fi
+
+[ -z "$MESSAGE" ] && { echo "빈 메시지" >&2; exit 1; }
+
+# ── 세션 식별 ───────────────────────────────────────────────
+# 여러 팀 세션을 동시에 띄울 수 있으므로 "가장 최근 세션" 추정에 기대지 않는다:
+#   --session → TEAM_SESSION(setup-team.sh 가 멤버 페인에 지정) → 호출 페인(TMUX_PANE)의 세션
+#   → tmux 밖에서는 세션이 하나뿐일 때만 그 세션, 여럿이면 --session 요구.
+if [ -n "$SESSION_OVERRIDE" ]; then
+    SESSION="$SESSION_OVERRIDE"
+elif [ -n "${TEAM_SESSION:-}" ]; then
+    SESSION="$TEAM_SESSION"
+elif [ -n "${TMUX_PANE:-}" ]; then
+    SESSION="$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}' 2>/dev/null || true)"
+else
+    _SESSIONS="$(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)"
+    if [ "$(printf '%s\n' "$_SESSIONS" | grep -c .)" -gt 1 ]; then
+        echo "❌ tmux 세션이 여럿입니다 — --session <이름> 으로 지정하세요: $(printf '%s' "$_SESSIONS" | tr '\n' ' ')" >&2
+        exit 1
+    fi
+    SESSION="${_SESSIONS:-team}"
+fi
+if [ -z "$SESSION" ] || ! tmux has-session -t "$SESSION" 2>/dev/null; then
+    echo "❌ 세션 '${SESSION}' 을 찾을 수 없습니다. 사용 가능: $(tmux list-sessions -F '#{session_name}' 2>/dev/null | tr '\n' ' ')" >&2
+    exit 3
+fi
+
+# ── 멤버 설정 로드 + 수신자 페인 결정 ──────────────────────
+MEMBERS_FILE="$(tmux show-options -v -t "$SESSION" @team_members_file 2>/dev/null || true)"
+MEMBERS_FILE="${MEMBERS_FILE:-${TEAM_MEMBERS_FILE:-$TEAM_HOME/teams/discovery.conf}}"
+load_members "$MEMBERS_FILE" || exit 1
+
+IDX="$(member_index "$RECIPIENT")"
+if [ -z "$IDX" ]; then
+    echo "알 수 없는 수신자: $RECIPIENT" >&2
+    echo "유효한 이름: ${M_NAME[*]} (별칭은 team-send -h)" >&2
+    exit 1
+fi
+
+# ── 발신자 식별 ─────────────────────────────────────────────
+
+## 발신자 식별 — TMUX_PANE 환경변수가 자기 페인 ID (%XX) 를 정확히 가짐.
+## 단, 호스트 셸 또는 타 세션에서 호출 시 SENDER 는 "외부" 로 표기.
+SENDER=""
+if [ -n "${TMUX_PANE:-}" ]; then
+    SENDER_PANE_SESSION="$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}' 2>/dev/null || echo "")"
+    if [ "$SENDER_PANE_SESSION" = "$SESSION" ]; then
+        # 같은 세션 내 페인에서 호출 — 페인 태그(@member) 로 이름 매핑
+        SENDER_PANE="$(tmux display-message -p -t "$TMUX_PANE" '#{@member}' 2>/dev/null || echo "")"
+        SENDER="$(name_for "$SENDER_PANE")"
+    fi
+fi
+[ -z "$SENDER" ] && SENDER="외부"
+RECIPIENT_NAME="$(name_for "$IDX")"
+# 수신 페인은 tmux 인덱스가 아니라 setup-team.sh 가 붙인 @member 태그로 찾는다.
+TARGET="$(member_pane_id "$SESSION" "$IDX")"
+if [ -z "$TARGET" ]; then
+    echo "❌ 수신자 페인을 찾을 수 없습니다 (session=$SESSION, 수신자=$RECIPIENT_NAME, member=$IDX)." >&2
+    echo "   진단: tmux list-panes -s -t '$SESSION' -F '#{@member} #{@role} #{pane_id}'" >&2
+    exit 3
+fi
+
+# ── 수신자 페인 활성 검사 ─────────────────────────────────────
+# pane_current_command 가 셸이면 Claude 가 종료된 비활성 상태로 판단.
+# 활성 페인은 Claude 버전(예: "2.1.144") 이 표시됨.
+TARGET_CMD="$(tmux display-message -p -t "$TARGET" '#{pane_current_command}' 2>/dev/null | tr -d '[:space:]')"
+if [ -z "$TARGET_CMD" ]; then
+    echo "❌ 수신자 페인을 찾을 수 없습니다 (target=$TARGET, 수신자=$RECIPIENT_NAME)." >&2
+    echo "   진단: tmux list-panes -t '$SESSION:0'" >&2
+    exit 3
+fi
+case "$TARGET_CMD" in
+    bash|zsh|sh|fish|tcsh|csh|ksh|dash)
+        echo "❌ 수신자 페인($IDX, $RECIPIENT_NAME) 이 비활성 상태입니다." >&2
+        echo "   현재 실행: $TARGET_CMD (Claude 가 종료됨)" >&2
+        echo "   진단: tmux capture-pane -t '$TARGET' -p | tail -10" >&2
+        echo "   조치: setup-team.sh 재실행 또는 해당 페인 수동 재시작 필요." >&2
+        echo "   ⚠️  발신자 안내: 사용자에게 '대신 전달' 요청 금지. '[시스템 장애] $RECIPIENT_NAME 페인 비활성, 재시작 결정 요청' 형태로만 보고." >&2
+        exit 4
+        ;;
+esac
+
+# ── 페이로드 조립 ───────────────────────────────────────────
+if [ "$NO_HEADER" -eq 1 ]; then
+    PAYLOAD="$MESSAGE"
+else
+    PAYLOAD="[From: ${SENDER} → ${RECIPIENT_NAME}] $(date +'%Y-%m-%d %H:%M')
+
+${MESSAGE}"
+fi
+
+# ── 전송 (bracketed paste 로 한 청크 주입 → Enter) ──────────
+# 긴 메시지 (>2KB) 는 paste 완료까지 시간이 더 걸리므로 동적으로 sleep 조정.
+BUFFER="team-msg-$$"
+printf '%s' "$PAYLOAD" | tmux load-buffer -b "$BUFFER" -
+tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
+tmux delete-buffer -b "$BUFFER"
+
+# paste 안정화 대기: 메시지 길이에 비례. 최소 0.5s, 최대 2s.
+# ${#PAYLOAD} 는 문자 수라 UTF-8 한국어에서 ~3배 과소 (Enter 미발동 요인) → wc -c 로 바이트 수 계산.
+PAYLOAD_BYTES="$(printf '%s' "$PAYLOAD" | wc -c | tr -d ' ')"
+if [ "$PAYLOAD_BYTES" -lt 500 ]; then
+    SLEEP_SEC="0.5"
+elif [ "$PAYLOAD_BYTES" -lt 2000 ]; then
+    SLEEP_SEC="1"
+else
+    SLEEP_SEC="2"
+fi
+sleep "$SLEEP_SEC"
+tmux send-keys -t "$TARGET" Enter
+
+# ── positive delivery 확인 (Enter 발동 후 입력창 잔존 체크) ─────────
+# 입력 프롬프트 기호: Claude '❯' · Codex '›'. 마지막 기호 이후(입력창)만 검사 — transcript 에코 제외.
+# 판정 신호:
+#   (1) 큐잉 성공 → OK — Claude "Press up to edit queued" · Codex "Messages to be submitted"
+#   (2) collapse placeholder 잔존(긴 메시지) → 미제출 — Claude "Pasted text" · Codex "Pasted Content"
+#   (3) MSG_PROBE — 짧은 메시지 비-collapse 잔존 안전망
+#   (4) 프롬프트 기호를 못 찾음 → 판정 불가. 성공으로 치지 않는다 (Enter 재발사도 하지 않음)
+# blind-Enter 안전장치: (2)(3) 신호가 입력창 구간에 있을 때만 재발사.
+# MSG_PROBE: 첫 비어 있지 않은 줄의 앞 20자. 문자 단위로 자른다 — cut -c 는 macOS 에서 바이트 단위라 한글이 깨져 매칭 실패.
+_FIRST_LINE="$(printf '%s\n' "$PAYLOAD" | awk 'NF{print; exit}')"
+MSG_PROBE="${_FIRST_LINE:0:20}"
+_STATE=unknown   # ok | pending(잔존) | unknown(입력창 판독 불가)
+for _i in 1 2 3; do
+    sleep 0.7
+    # 끝의 빈 줄을 버린 뒤 마지막 20줄 — 화면 아래가 비어 있으면 tail 이 빈 줄만 잡아 입력창을 놓친다
+    _CAP="$(tmux capture-pane -t "$TARGET" -p 2>/dev/null | awk '{l[NR]=$0} NF{last=NR} END{for(i=1;i<=last;i++) print l[i]}' | tail -20)"
+    # 큐잉 성공 신호 → 즉시 OK
+    if printf '%s' "$_CAP" | grep -qE "Press up to edit queued|Messages to be submitted"; then
+        _STATE=ok; break
+    fi
+    # 프롬프트 기호 이후 구간(입력창)만 추출 — transcript 에코 방지 (마지막 기호 기준)
+    _INPUT_AREA="$(printf '%s' "$_CAP" | awk '/❯|^[[:space:]]*›/{buf=""; found=1} found{buf=buf$0 ORS} END{printf "%s", buf}')"
+    if [ -z "$_INPUT_AREA" ]; then
+        _STATE=unknown; continue   # 화면 갱신 중일 수 있어 다시 본다
+    fi
+    # 잔존 검사 — 입력창에 [Pasted text] 또는 MSG_PROBE 있으면 확정 미제출 → 재발사
+    # (제출 성공이면 paste 가 transcript 로 이동해 입력창에서 사라지므로 잔존 = 미제출 확정)
+    if printf '%s' "$_INPUT_AREA" | grep -qE "Pasted text|Pasted Content" || \
+       { [ -n "$MSG_PROBE" ] && printf '%s' "$_INPUT_AREA" | grep -qF -- "$MSG_PROBE"; }; then
+        tmux send-keys -t "$TARGET" Enter 2>/dev/null || true
+        _STATE=pending
+    else
+        _STATE=ok; break  # 입력창 비어있음 = 제출 성공 (esc든 idle 이든 무관)
+    fi
+done
+
+if [ "$_STATE" = ok ]; then
+    echo "✅ ${SENDER} → ${RECIPIENT_NAME} (pane ${IDX}, ${PAYLOAD_BYTES}B)"
+    EXIT_CODE=0
+else
+    # 성공 표시(✅)를 내지 않는다 — 전송 이력 Hook·발신자가 성공으로 오인하지 않도록 exit 5
+    if [ "$_STATE" = pending ]; then
+        _WHY="입력창에 메시지가 남아 있음 (Enter 3회 재발사 후)"
+    else
+        _WHY="수신자 입력창(❯/›)을 화면에서 찾지 못함"
+    fi
+    echo "⚠️ ${SENDER} → ${RECIPIENT_NAME} (pane ${IDX}, ${PAYLOAD_BYTES}B) delivery 미확인 — ${_WHY}"
+    echo "   확인: team-status --session '$SESSION' --tail 15 · 같은 메시지를 다시 보내지 말고 진행-클로드에게 보고" >&2
+    EXIT_CODE=5
+fi
+
+# ── Codex 수신자: 5시간 사용 한도 확인 (전송은 막지 않고 발신자에게 알림) ──
+if [ "${M_ENGINE[$IDX]}" = "codex" ]; then
+    _U="$(codex_usage "$(codex_rollout_for_pane "$TARGET")")"
+    [ -n "$_U" ] || _U="$(codex_usage "$(codex_latest_rollout)")"
+    IFS='|' read -r _CTX _P _PR _W _WR <<EOF
+$_U
+EOF
+    if [ -n "${_P:-}" ] && [ "$_P" -lt 30 ]; then
+        echo "$(codex_limit_marker "$_P") Codex 5시간 한도 ${_P}% 남음 (리셋 $(codex_fmt_time "$_PR")) — 큰 작업이면 사용자에게 보고 후 진행(리셋 대기 / Claude 쪽 재배정 / effort 하향)." >&2
+    fi
+fi
+
+exit "$EXIT_CODE"

@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+# 화면에 상태 표시줄만 있고 입력 프롬프트가 없는 가짜 CLI
+import sys, time
+sys.stdout.write("  bypass permissions on (shift+tab to cycle)\n"); sys.stdout.flush()
+time.sleep(10**6)

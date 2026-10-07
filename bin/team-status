@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# team-status — 팀 페인 상태 모니터링 (진행 파트 자율 운영용)
+
+set -euo pipefail
+
+TEAM_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$TEAM_HOME/lib/codex.sh"
+
+# codex_limits_line [rollout 파일] — Codex 계정 사용 한도 한 줄 (5시간 · 주간)
+codex_limits_line() {
+    local f="${1:-}" u ctx p pr wk wr
+    [ -n "$f" ] || f="$(codex_latest_rollout)"
+    u="$(codex_usage "$f")"
+    IFS='|' read -r ctx p pr wk wr <<EOF
+$u
+EOF
+    if [ -z "$p" ]; then
+        echo "  Codex 사용 한도: 정보 없음 (Codex 세션 기록 없음 또는 jq 미설치)"
+        return
+    fi
+    printf "  %s Codex 5시간 한도 %s%% 남음 (리셋 %s) · 주간 %s%% 남음 (리셋 %s)\n" \
+        "$(codex_limit_marker "$p")" "$p" "$(codex_fmt_time "$pr")" "$wk" "$(codex_fmt_time "$wr" '%m/%d %H:%M')"
+}
+
+# ── 옵션 파싱 ────────────────────────────────────────────────
+SESSION_OVERRIDE=""
+TAIL_LINES=2
+WATCH_INTERVAL=0
+SHOW_HELP=0
+LIMITS_ONLY=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --session) SESSION_OVERRIDE="$2"; shift 2 ;;
+        --tail) TAIL_LINES="$2"; shift 2 ;;
+        --watch) WATCH_INTERVAL="${2:-10}"; shift 2 ;;
+        --limits) LIMITS_ONLY=1; shift ;;
+        -h|--help) SHOW_HELP=1; shift ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [ "$SHOW_HELP" -eq 1 ]; then
+    cat <<'EOF'
+Usage:
+  team-status                  # 한 번 출력
+  team-status --tail 5         # 페인별 마지막 5줄 미리보기
+  team-status --watch 10       # 10초마다 갱신
+  team-status --session <name> # 세션 지정
+  team-status --limits         # Codex 사용 한도(5시간·주간)만 한 줄 출력
+
+출력 컬럼:
+  pane | 창 | 역할 | 상태 | ctx | cmd | 마지막 N줄
+  ctx: Claude 는 사용률(used), Codex 는 남은 비율(left). Codex 값은 세션 기록에서 읽는다(/status 와 동일).
+EOF
+    exit 0
+fi
+
+if [ "$LIMITS_ONLY" -eq 1 ]; then
+    codex_limits_line
+    exit 0
+fi
+
+# ── 세션 식별 ────────────────────────────────────────────────
+# team-send 와 같은 순서: --session → TEAM_SESSION(멤버 페인) → 호출 페인의 세션 → tmux 기본
+if [ -n "$SESSION_OVERRIDE" ]; then
+    SESSION="$SESSION_OVERRIDE"
+elif [ -n "${TEAM_SESSION:-}" ]; then
+    SESSION="$TEAM_SESSION"
+elif [ -n "${TMUX_PANE:-}" ]; then
+    SESSION="$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}' 2>/dev/null || echo team)"
+else
+    SESSION="$(tmux display-message -p '#S' 2>/dev/null || echo team)"
+fi
+
+if ! tmux has-session -t "$SESSION" 2>/dev/null; then
+    echo "❌ 세션 '$SESSION' 을 찾을 수 없습니다." >&2
+    echo "   사용 가능: $(tmux list-sessions -F '#{session_name}' 2>/dev/null | tr '\n' ' ')" >&2
+    exit 1
+fi
+
+# ── 상태 판정·렌더 ──────────────────────────────────────────
+## 컨텍스트 사용률 추출 + 임계 분류
+## Claude UI 푸터 패턴:
+##   "X% context used"            — 초기/중간 (X 가 증가)
+##   "X% until auto-compact"      — 임박 (X 가 0 에 가까워질수록 위험)
+##   auto-compact 직후엔 메트릭 미표시 (재계산 중)
+##
+## 출력 컬럼은 "ctx" 한 칸으로 통합. 임계 마커:
+## 공통 규칙 §8.1 의 70% 임계와 맞춘다 (진행 파트 임계표와 같은 기준):
+##   60% 미만 ctx_used      → 정상
+##   60-69% ctx_used        → ℹ️
+##   70-89% ctx_used        → ⚠️  (임계 — 정리 후 /compact 지시)
+##   90%+ ctx_used 또는 until auto-compact 20% 미만 → 🚨
+##   until auto-compact 5% 미만 → 🆘 (긴급)
+extract_context() {
+    local pane_id="$1"
+    local snap
+    snap=$(tmux capture-pane -t "$pane_id" -p 2>/dev/null | tail -15)
+
+    local ctx_used ctx_until
+    ctx_used=$(echo "$snap" | grep -oE '[0-9]+% context used' | tail -1 | grep -oE '^[0-9]+')
+    ctx_until=$(echo "$snap" | grep -oE '[0-9]+% until auto-compact' | tail -1 | grep -oE '^[0-9]+')
+
+    if [ -n "$ctx_until" ]; then
+        local marker
+        if   [ "$ctx_until" -lt 5  ]; then marker="🆘"
+        elif [ "$ctx_until" -lt 20 ]; then marker="🚨"
+        else                               marker="⚠️ "
+        fi
+        printf "%s %s%%→compact" "$marker" "$ctx_until"
+    elif [ -n "$ctx_used" ]; then
+        local marker
+        if   [ "$ctx_used" -ge 90 ]; then marker="🚨"
+        elif [ "$ctx_used" -ge 70 ]; then marker="⚠️ "
+        elif [ "$ctx_used" -ge 60 ]; then marker="ℹ️ "
+        else                              marker="  "
+        fi
+        printf "%s %s%% used  " "$marker" "$ctx_used"
+    else
+        printf "  -          "
+    fi
+}
+
+render_once() {
+    local stamp
+    stamp="$(date +'%Y-%m-%d %H:%M:%S')"
+    echo "═══ Team Status — $stamp (session: $SESSION) ═══"
+    echo
+
+    # 페인별 한 줄 (상태 + 컨텍스트) + 미리보기
+    # 페인은 setup-team.sh 의 @member 태그(멤버 번호) 순으로 표시 — tmux base-index·창 분리와 무관
+    local codex_rollout=""
+    # 목록은 fd 3 으로 읽는다 — 루프 안의 ps·lsof 등이 표준 입력을 소비해도 목록이 끊기지 않게.
+    while IFS='|' read -r -u 3 idx pane_id win role engine cmd dead pid; do
+        local state state_short
+        if [ "$dead" = "1" ]; then
+            state="💀 종료됨" ; state_short="DEAD"
+        else
+            case "$cmd" in
+                bash|zsh|sh|fish|tcsh|csh|ksh|dash)
+                    state="⚠️  비활성(셸: $cmd, ${engine:-claude} 종료됨)" ; state_short="INACT"
+                    ;;
+                *) state="✅ 활성($cmd)" ; state_short="OK" ;;
+            esac
+        fi
+
+        local ctx_col="" rollout u ctx
+        if [ "$state_short" = "OK" ]; then
+            if [ "$engine" = "codex" ]; then
+                rollout="$(codex_rollout_for_pane "$pane_id")"
+                [ -n "$rollout" ] && codex_rollout="$rollout"
+                u="$(codex_usage "$rollout")"; ctx="${u%%|*}"
+                if [ -n "$ctx" ]; then
+                    local marker="  "
+                    # 70% 사용 = 30% left 를 임계로 (공통 §8.1)
+                    if   [ "$ctx" -le 10 ]; then marker="🆘"
+                    elif [ "$ctx" -le 20 ]; then marker="🚨"
+                    elif [ "$ctx" -le 30 ]; then marker="⚠️ "
+                    elif [ "$ctx" -le 40 ]; then marker="ℹ️ "
+                    fi
+                    ctx_col="$(printf "%s %s%% left  " "$marker" "$ctx")"
+                else
+                    ctx_col="  -          "
+                fi
+            else
+                ctx_col=$(extract_context "$pane_id")
+            fi
+        fi
+
+        printf "  [%s] p%s %-8s %-26s ctx=[%s] %s (pid %s)\n" \
+            "$state_short" "$idx" "[$win]" "${role:-(미설정)}" "$ctx_col" "$state" "$pid"
+
+        # 마지막 N 줄 미리보기 (빈 줄 제외, 우측 컬럼 너비 제한)
+        if [ "$TAIL_LINES" -gt 0 ] && [ "$state_short" = "OK" ]; then
+            # 화면에 빈 줄·상태 표시줄만 있으면 grep 이 1 을 돌려 pipefail + set -e 로 전체가 끝나므로 실패를 흡수한다
+            tmux capture-pane -t "$pane_id" -p 2>/dev/null \
+                | grep -v "^$" \
+                | grep -vE "(context used|until auto-compact|bypass permissions|paste again|shift\+tab)" \
+                | tail -n "$TAIL_LINES" \
+                | sed 's/^/         │ /' \
+                | head -c 4000 || true
+            echo ""
+        fi
+    done 3<<EOF
+$(tmux list-panes -s -t "$SESSION" -F '#{@member}|#{pane_id}|#{window_name}|#{@role}|#{@engine}|#{pane_current_command}|#{pane_dead}|#{pane_pid}' | sort -t '|' -k1,1n)
+EOF
+
+    # Codex 사용 한도 — 계정 단위. 세션 안 Codex 멤버의 기록을 우선 사용
+    if tmux list-panes -s -t "$SESSION" -F '#{@engine}' | grep -qx codex; then
+        echo "─── Codex 사용 한도 (계정) ───"
+        codex_limits_line "$codex_rollout"
+        echo "  5시간 한도 30% 미만 ⚠️ · 10% 미만 🚨 — 큰 작업 배정 전 확인. 부족하면 사용자에게 보고(리셋 대기 / Claude 쪽 재배정 / effort 하향)."
+    fi
+
+    echo "─── 컨텍스트 임계 안내 ───"
+    echo "  Claude(used): ℹ️ 60%+   ⚠️ 70%+ (임계)   🚨 90%+ 또는 compact 20% 미만   🆘 compact 5% 미만"
+    echo "  Codex(left):  ℹ️ 40% 이하   ⚠️ 30% 이하 (임계)   🚨 20% 이하   🆘 10% 이하"
+    echo "  임계 도달 시: 해당 멤버에게 'docs/checkpoints/<role>.md 에 현 상태 요약 저장 후 /compact' 지시."
+}
+
+if [ "$WATCH_INTERVAL" -gt 0 ]; then
+    while true; do
+        clear
+        render_once
+        sleep "$WATCH_INTERVAL"
+    done
+else
+    render_once
+fi

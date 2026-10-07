@@ -1,0 +1,9 @@
+# 사용자별 Claude Code 로컬 권한 설정 — 머신마다 다름
+.claude/settings.local.json
+
+# setup-team.sh 가 매 실행마다 만드는 합성 시스템 프롬프트 — 빌드 산출물
+roles/.merged/
+
+# 일반적인 노이즈
+.DS_Store
+*.log

@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# team-checkpoint — 컨텍스트 정리(compact) 전후 자동 체크포인트 훅 (Claude·Codex 공용)
+#
+#   team-checkpoint pre   PreCompact 훅. 정리 직전 대화 일부·작업 폴더 상태를
+#                         <cwd>/docs/checkpoints/<멤버>-<시각>-auto.md 로 저장한다.
+#                         복구 대기 표시(.pending-<멤버>)를 남긴다.
+#   team-checkpoint post  복구 대기 표시가 있으면 "체크포인트를 읽고 이어가라" 는 지시를 additionalContext 로 한 번만 주입한다.
+#                         Claude: SessionStart(source=compact). Codex: SessionStart(source=compact) + UserPromptSubmit
+#                         (Codex 에서 compact 후 SessionStart 가 오지 않는 경우가 있어 다음 프롬프트에서도 받는다 — 2026-10-02 확인.
+#                          Codex PreCompact/PostCompact 는 additionalContext 를 받지 않는다.)
+#
+# 등록: Claude 는 멤버 세션의 --settings, Codex 는 사용자 전역 ~/.codex/hooks.json (setup-team.sh 0.5단계, /hooks 에서 1회 신뢰 필요).
+# TEAM_MEMBER 가 없는 세션(사용자 개인 세션)에서는 아무것도 하지 않고 끝난다.
+# 입력: stdin JSON (transcript_path, cwd, trigger 등). 환경변수 TEAM_MEMBER, TEAM_ENGINE.
+# 정리를 막지 않는다 — 어떤 실패에도 exit 0. 공통 워크플로 §8.1.
+
+set -u
+MODE="${1:-}"
+MEMBER="${TEAM_MEMBER:-}"
+[ -n "$MEMBER" ] || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+PAYLOAD="$(cat)"
+CWD="$(printf '%s' "$PAYLOAD" | jq -r '.cwd // empty' 2>/dev/null)"
+CWD="${CWD:-$PWD}"
+DIR="$CWD/docs/checkpoints"
+LAST="$DIR/.last-$MEMBER"
+
+recovery_message() {
+    printf '%s' "[자동 체크포인트] 컨텍스트가 정리되었다(정리 직전 저장: $1). 정리 후 첫 응답 전에 이 파일과 본인이 쓴 최근 체크포인트(docs/checkpoints/ 의 ${MEMBER}-*.md 중 auto 가 아닌 것)를 읽고, 진행 중이던 작업·다음 단계·차단 사항을 복구해 이어간다. 위임받은 작업이 있었다면 위임자에게 team-send 로 '[복귀] 컨텍스트 정리 후 재개 — <현재 단계>' 를 보고한다."
+}
+
+case "$MODE" in
+pre)
+    mkdir -p "$DIR" 2>/dev/null && printf '%s pre %s %s\n' "$(date '+%F %T')" "$MEMBER" "${TEAM_ENGINE:-?}" >> "$DIR/.hook.log" 2>/dev/null
+    TRANSCRIPT="$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty' 2>/dev/null)"
+    TRIGGER="$(printf '%s' "$PAYLOAD" | jq -r '.trigger // "unknown"' 2>/dev/null)"
+    mkdir -p "$DIR" 2>/dev/null || exit 0
+    STAMP="$(date +%Y%m%d-%H%M%S)"
+    FILE="$DIR/$MEMBER-$STAMP-auto.md"
+    {
+        echo "# 자동 체크포인트 — $MEMBER ($(date '+%Y-%m-%d %H:%M:%S'))"
+        echo
+        echo "- 엔진: ${TEAM_ENGINE:-?} · 정리 계기: $TRIGGER ($( [ "$TRIGGER" = auto ] && echo '컨텍스트 한도 도달로 자동' || echo '수동 /compact'))"
+        echo "- 이 파일은 정리 **직전** 기계적으로 저장한 원문 일부다. 본인이 쓴 체크포인트(§8.1 의 5종 요약)가 있으면 그쪽이 우선한다."
+        echo
+        echo "## 작업 폴더 상태"
+        echo
+        if git -C "$CWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo '```'
+            echo "브랜치: $(git -C "$CWD" branch --show-current 2>/dev/null)"
+            git -C "$CWD" status --short 2>/dev/null | head -30
+            echo "--- 최근 커밋"
+            git -C "$CWD" log --oneline -5 2>/dev/null
+            echo '```'
+        else
+            echo "(git 저장소 아님)"
+        fi
+        echo
+        echo "## 정리 직전 대화 (최근 메시지, 길면 앞부분만)"
+        echo
+        if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+            # Claude: {type:user|assistant, message:{content:...}} / Codex: {type:response_item, payload:{type:message, role, content:[{text}]}}
+            tail -n 400 "$TRANSCRIPT" | jq -r '
+                def txt: if type == "string" then . elif type == "array" then map(select(.type? == "text" or .type? == "input_text" or .type? == "output_text") | .text) | join(" ") else "" end;
+                if (.type == "user" or .type == "assistant") and .message? then
+                    {r: .type, t: (.message.content | txt)}
+                elif .type == "response_item" and .payload.type? == "message" then
+                    {r: .payload.role, t: (.payload.content | txt)}
+                else empty end
+                | select(.t != "" and (.r == "user" or .r == "assistant"))
+                | "**\(.r)**: \(.t | gsub("\\s+"; " ") | .[0:600])"' 2>/dev/null | tail -n 16 | sed 's/$/\n/'
+        else
+            echo "(대화 기록 경로 없음)"
+        fi
+    } > "$FILE" 2>/dev/null || exit 0
+    printf '%s\n' "$FILE" > "$LAST" 2>/dev/null
+    printf -- '- %s · %s · [%s](%s)\n' "$(date '+%Y-%m-%d %H:%M')" "$MEMBER" "$(basename "$FILE")" "$(basename "$FILE")" >> "$DIR/index.md" 2>/dev/null
+    printf '%s\n' "$FILE" > "$DIR/.pending-$MEMBER" 2>/dev/null
+    exit 0
+    ;;
+post)
+    printf '%s post %s %s %s\n' "$(date '+%F %T')" "$MEMBER" "${TEAM_ENGINE:-?}" "$(printf '%s' "$PAYLOAD" | jq -r '.hook_event_name // "?"' 2>/dev/null)" >> "$DIR/.hook.log" 2>/dev/null
+    PENDING="$DIR/.pending-$MEMBER"
+    [ -f "$PENDING" ] || exit 0
+    FILE="$(cat "$PENDING" 2>/dev/null)"
+    rm -f "$PENDING"
+    [ -n "$FILE" ] && [ -f "$FILE" ] || exit 0
+    EVENT="$(printf '%s' "$PAYLOAD" | jq -r '.hook_event_name // "SessionStart"' 2>/dev/null)"
+    recovery_message "$FILE" | jq -Rs --arg e "$EVENT" '{hookSpecificOutput: {hookEventName: $e, additionalContext: .}}'
+    exit 0
+    ;;
+esac
+exit 0

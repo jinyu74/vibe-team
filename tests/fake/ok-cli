@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# Enter 를 받으면 입력을 대화 기록으로 올리고 빈 입력창을 다시 그리는 가짜 CLI (정상 전달)
+import sys, tty, os
+fd = sys.stdin.fileno(); tty.setraw(fd)
+os.write(1, "❯ ".encode()); buf = b""
+while True:
+    c = os.read(fd, 4096).replace(b"\x1b[200~", b"").replace(b"\x1b[201~", b"")
+    parts = c.split(b"\r")
+    for k, part in enumerate(parts):
+        part = part.replace(b"\n", b" "); buf += part; os.write(1, part)
+        if k < len(parts) - 1 and buf.strip():
+            os.write(1, b"\x1b[2K\r> " + buf + "\r\n\r\n❯ ".encode()); buf = b""

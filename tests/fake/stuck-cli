@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+# 입력은 화면에 표시하지만 Enter 로 제출되지 않는 가짜 CLI (전달 실패 재현)
+import sys, tty, os
+fd = sys.stdin.fileno(); tty.setraw(fd)
+os.write(1, "─────\r\n❯ ".encode())
+while True:
+    c = os.read(fd, 4096)
+    for t in (b"\x1b[200~", b"\x1b[201~", b"\r"):
+        c = c.replace(t, b"")
+    os.write(1, c.replace(b"\n", b" "))

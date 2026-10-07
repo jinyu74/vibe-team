@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# team-gate — 그린 루프 게이트 실행기. 프로젝트가 정한 테스트·품질·성능·보안 명령을 차례로 돌려 통과/실패를 근거로 남긴다 (공통 §6.2).
+# bash 3.2 호환 (macOS 기본 bash).
+#
+# 사용: team-gate [--config <파일>] [--only <이름,...>] [--label <작업 ID>] [--list]
+#   설정: --config → $VIBE_GATES → 현재 폴더에서 위로 찾은 .vibe/gates.conf
+#   형식: 이름 | 담당 파트 | 명령      ('#' 주석, 빈 줄 무시. 명령은 설정 파일의 프로젝트 루트에서 bash -c 로 실행)
+#   기록: <루트>/.vibe/runs/<시각>/<이름>.log, summary.md  ·  최신 요약 <루트>/.vibe/runs/latest.md
+#   --label: <루트>/.vibe/runs/history/<작업 ID>.tsv 에 회차를 쌓고, 같은 게이트 연속 실패 횟수를 알린다 (§6.4 탈출 기준)
+# 종료 코드: 0 = 전부 통과, 1 = 하나 이상 실패, 2 = 설정·사용법 오류
+
+set -u
+CONFIG="${VIBE_GATES:-}" ONLY="" LABEL="" LIST=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --config) CONFIG="${2:-}"; shift 2 ;;
+        --only) ONLY="${2:-}"; shift 2 ;;
+        --label) LABEL="${2:-}"; shift 2 ;;
+        --list) LIST=1; shift ;;
+        -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "알 수 없는 옵션: $1 (team-gate -h)" >&2; exit 2 ;;
+    esac
+done
+
+if [ -z "$CONFIG" ]; then
+    # 현재 폴더에서 위로 올라가며 .vibe/gates.conf 를 찾는다. 없으면 git 최상위(또는 현재 폴더) 기준 경로로 안내.
+    d="$PWD"
+    while [ "$d" != "/" ] && [ ! -f "$d/.vibe/gates.conf" ]; do d="$(dirname "$d")"; done
+    [ -f "$d/.vibe/gates.conf" ] || d="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    CONFIG="$d/.vibe/gates.conf"
+fi
+[ -f "$CONFIG" ] || { echo "게이트 설정 없음: $CONFIG — 테스트설계 파트가 .vibe/gates.conf 를 만든다 (공통 §6.2)" >&2; exit 2; }
+CONFIG="$(cd "$(dirname "$CONFIG")" && pwd)/$(basename "$CONFIG")"
+# 설정이 <루트>/.vibe/gates.conf 이면 루트는 .vibe 의 부모, 아니면 설정 파일이 있는 폴더
+ROOT="$(dirname "$CONFIG")"; [ "$(basename "$ROOT")" = ".vibe" ] && ROOT="$(dirname "$ROOT")"
+
+trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
+
+G_NAME=(); G_PART=(); G_CMD=(); n=0 lineno=0
+while IFS= read -r line || [ -n "$line" ]; do
+    lineno=$((lineno + 1))
+    line="$(trim "$line")"
+    case "$line" in ''|'#'*) continue ;; esac
+    name="$(trim "${line%%|*}")"; rest="${line#*|}"
+    part="$(trim "${rest%%|*}")"; cmd="$(trim "${rest#*|}")"
+    if [ "$rest" = "$line" ] || [ "$cmd" = "$rest" ] || [ -z "$name" ] || [ -z "$cmd" ]; then
+        echo "$CONFIG:$lineno: 형식 오류 — '이름 | 담당 파트 | 명령'" >&2; exit 2
+    fi
+    case "$name" in *[!A-Za-z0-9._-]*) echo "$CONFIG:$lineno: 이름은 영문·숫자·._- 만 ('$name')" >&2; exit 2 ;; esac
+    i=0; while [ $i -lt $n ]; do [ "${G_NAME[$i]}" = "$name" ] && { echo "$CONFIG:$lineno: 중복 이름 '$name'" >&2; exit 2; }; i=$((i + 1)); done
+    G_NAME[$n]="$name"; G_PART[$n]="$part"; G_CMD[$n]="$cmd"; n=$((n + 1))
+done < "$CONFIG"
+[ $n -gt 0 ] || { echo "$CONFIG: 게이트가 없습니다" >&2; exit 2; }
+
+if [ -n "$ONLY" ]; then
+    for o in $(printf '%s' "$ONLY" | tr ',' ' '); do
+        hit=0; i=0; while [ $i -lt $n ]; do [ "${G_NAME[$i]}" = "$o" ] && hit=1; i=$((i + 1)); done
+        [ $hit -eq 1 ] || { echo "--only: 알 수 없는 게이트 '$o'" >&2; exit 2; }
+    done
+fi
+selected() { [ -z "$ONLY" ] && return 0; case ",$ONLY," in *",$1,"*) return 0 ;; esac; return 1; }
+
+if [ $LIST -eq 1 ]; then
+    i=0; while [ $i -lt $n ]; do printf '%-14s %-10s %s\n' "${G_NAME[$i]}" "${G_PART[$i]}" "${G_CMD[$i]}"; i=$((i + 1)); done
+    exit 0
+fi
+
+TS="$(date +%Y%m%d-%H%M%S)"
+RUN="$ROOT/.vibe/runs/$TS"; k=1
+while [ -e "$RUN" ]; do RUN="$ROOT/.vibe/runs/$TS-$k"; k=$((k + 1)); done
+mkdir -p "$RUN"
+SUMMARY="$RUN/summary.md"
+{
+    echo "# 게이트 실행 $TS${LABEL:+ — $LABEL}"
+    echo
+    echo "- 설정: $CONFIG"
+    echo "- 커밋: $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo '-')$(git -C "$ROOT" status --porcelain 2>/dev/null | grep -q . && echo ' (미커밋 변경 있음)')"
+    echo
+    echo "| 게이트 | 담당 파트 | 결과 | 시간 | 로그 |"
+    echo "|---|---|---|---|---|"
+} > "$SUMMARY"
+
+FAILED="" pass=0 fail=0
+i=0
+while [ $i -lt $n ]; do
+    if selected "${G_NAME[$i]}"; then
+        log="$RUN/${G_NAME[$i]}.log"
+        printf '▶ %-14s (%s) … ' "${G_NAME[$i]}" "${G_PART[$i]}"
+        t0=$(date +%s)
+        (cd "$ROOT" && bash -c "${G_CMD[$i]}") > "$log" 2>&1 < /dev/null
+        rc=$?
+        dt=$(( $(date +%s) - t0 ))
+        if [ $rc -eq 0 ]; then
+            echo "✅ ${dt}s"; pass=$((pass + 1)); res="✅ 통과"
+        else
+            echo "❌ exit $rc, ${dt}s"; fail=$((fail + 1)); res="❌ 실패 (exit $rc)"
+            FAILED="${FAILED:+$FAILED,}${G_NAME[$i]}"
+            tail -n 15 "$log" | sed 's/^/   │ /'
+        fi
+        echo "| ${G_NAME[$i]} | ${G_PART[$i]} | $res | ${dt}s | $log |" >> "$SUMMARY"
+    fi
+    i=$((i + 1))
+done
+
+if [ $fail -eq 0 ]; then verdict="PASS"; else verdict="FAIL"; fi
+{ echo; echo "- 판정: **$verdict** — 통과 $pass · 실패 $fail${FAILED:+ ($FAILED)}"; } >> "$SUMMARY"
+
+if [ -n "$LABEL" ]; then
+    hist_dir="$ROOT/.vibe/runs/history"; mkdir -p "$hist_dir"
+    hist="$hist_dir/$(printf '%s' "$LABEL" | tr -c 'A-Za-z0-9._-' '_').tsv"
+    printf '%s\t%s\t%s\t%s\n' "$TS" "$verdict" "${FAILED:--}" "$RUN" >> "$hist"
+    round=$(wc -l < "$hist" | tr -d ' ')
+    msg="- 루프: $LABEL ${round}회차"
+    if [ -n "$FAILED" ]; then
+        # 이번에 실패한 게이트마다 직전부터 연속으로 실패한 회차 수
+        for g in $(printf '%s' "$FAILED" | tr ',' ' '); do
+            streak=$(awk -F'\t' -v g="$g" '{ ok = (index("," $3 ",", "," g ",") > 0) } { s = ok ? s + 1 : 0 } END { print s + 0 }' "$hist")
+            [ "$streak" -ge 3 ] && msg="$msg
+- ⚠️ '$g' 연속 실패 ${streak}회 — 같은 수정 반복을 멈추고 원인 분석·상류 변경 요청을 검토 (공통 §6.4)"
+        done
+    fi
+    [ "$round" -ge 5 ] && [ "$verdict" = "FAIL" ] && msg="$msg
+- 🚨 ${round}회차까지 미통과 — 진행 파트에 에스컬레이션 (공통 §6.4)"
+    printf '%s\n' "$msg" >> "$SUMMARY"
+    printf '%s\n' "$msg"
+fi
+
+cp "$SUMMARY" "$ROOT/.vibe/runs/latest.md"
+echo "판정: $verdict (통과 $pass · 실패 $fail) — 요약 $SUMMARY"
+[ $fail -eq 0 ]
